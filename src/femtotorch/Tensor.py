@@ -36,14 +36,28 @@ class Tensor:
         if not isinstance(other, Tensor):
             other = Tensor(other)
 
-        out = Tensor(np.multiply(self, other))
+        out = Tensor(np.multiply(self.data, other.data), (self, other))
 
         def _backward():
-            self.grad += np.multiply(other.grad * out.grad)
-            other.grad += np.multiply(self.grad * out.grad)
+            self.grad += np.multiply(other.data, out.grad)
+            other.grad += np.multiply(self.data, out.grad)
 
+        out._backward = _backward
+        return out
     
-    
+    def __pow__(self, other):
+        assert isinstance(other, (float, int)), "does not support Tensor^Tensor only int/float powers"
+
+        out = Tensor(np.power(self.data, other), (self,))
+        def _backward():
+            self.grad += other * np.power(self.data, other - 1) * out.grad # d(out)/dself = d(self^n)/dself = n * self ^(n-1)
+            # other is not a variable so need to have its gradient
+        out._backward = _backward
+        return out
+
+    # def matmul(self, other):
+        
+
 
     def backward(self):
 
@@ -80,10 +94,7 @@ class Tensor:
 
 if __name__ == "__main__":
     print("Let's go !")
-    a = Tensor(np.array([1,1,1]))
-    b = Tensor(np.array([1,1,1]))
-    c = a + b
-    print(a, b, c)
-    print("backward")
+    a = Tensor([2,3])
+    c = a ** 2
     c.backward()
-    print(a, b, c)
+    print(a.grad)   # d(x^2)/dx = 2x = [4., 6.]
