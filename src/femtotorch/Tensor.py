@@ -18,6 +18,9 @@ class Tensor:
         self._backward = lambda: None # by default a dummy function returning None
         # for leaf nodes in the autograd engine
 
+    def __repr__(self):
+        return f"Tensor(data={self.data}, grad={self.grad})"
+    
     
     def __add__(self, other):
         if not isinstance(other, Tensor):
@@ -54,13 +57,89 @@ class Tensor:
             # other is not a variable so need to have its gradient
         out._backward = _backward
         return out
+    
+    def relu(self):
+        out = Tensor(np.maximum(0, self.data), (self,)) # np.maximum is the entry wise version of np.max
+        def _backward():
+            self.grad += (out.data > 0) * out.grad
+        out._backward = _backward
+        return out
+    
+    def exp(self):
+        out = Tensor(np.exp(self.data), (self,))
+        def _backward():
+            self.grad += out.data * out.grad
+        out._backward = _backward
+        return out
+    
+    def log(self):
+        out = Tensor(np.log(self.data), (self,))
+        def _backward():
+            self.grad += out.grad / self.data 
+        out._backward = _backward
+        return out
+    
+    def sum(self, axis = None, keepdims=False):
+        out = Tensor(np.sum(self.data, axis = axis, keepdims = keepdims), (self,))
+        def _backward():
+            self.grad += out.grad # taking advantage of numpy broadcasting since out.grad is usually smaller
+        out._backward = _backward
+        return out
 
-    # def matmul(self, other):
+    def __matmul__(self, other):
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+
+        out = Tensor(np.matmul(self.data, other.data), (self, other))
+        def _backward():
+            self.grad += out.grad @ np.swapaxes(other.data, -2, -1) # use numpy built in __matmul__ 
+            other.grad += np.swapaxes(self.data, -2, -1) @ out.grad
+        out._backward = _backward
+        return out
+    
+
+
+    def __getitem__(self, key): # self[key] index accessing operation
+        out = Tensor(self.data[key], (self,)) # using numpy __getitem__
         
+        def _backward():
+            np.add.at(self.grad, key, out.grad)   # handles repeated indices safely to avoid overwriting
+            self.grad += grad
+        out._backward = _backward
+        return out
+    
 
 
+
+
+    def __neg__(self):
+        return self * -1
+    
+    def __sub__(self, other):
+        return self + (-other)
+    
+    def __rsub__(self, other):
+        return (-self) + other
+    
+    def __radd__(self, other):
+        return self + other
+    
+    def __rmul__(self, other):
+        return self * other
+    
+    def __truediv__(self, other):
+        return self * (other**-1)
+
+    def __rtruediv__(self, other):
+        return (self ** - 1) * other
+    
+
+    # to reset gradient after each gradient descent
+    def zero_grad(self):
+        self.grad = np.zeros_like(self.data)
+    
+    # Construction of the neural net graph and gradient descent
     def backward(self):
-
         # topological order of all the children in the graph
         topo = []
         visited = set()
@@ -77,24 +156,22 @@ class Tensor:
         for v in reversed(topo):
             v._backward()
     
-    def __repr__(self):
-        return f"Tensor(data={self.data}, grad={self.grad})"
+    
 
 
-
-
+    # property makes the method behaves like an attribute, so can call .shape .size .ndim
+    @property
     def shape(self):
         return self.data.shape
     
+    @property
     def size(self):
         return self.data.size
-
+    
+    @property
     def ndim(self): # dimensions's number
         return self.data.ndim
 
 if __name__ == "__main__":
-    print("Let's go !")
-    a = Tensor([2,3])
-    c = a ** 2
-    c.backward()
-    print(a.grad)   # d(x^2)/dx = 2x = [4., 6.]
+    print("test area:")
+    
