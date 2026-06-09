@@ -1,8 +1,22 @@
 import numpy as np
 
+# helper function to allow backward pass on operations with numpy broadcasting
+def unbroadcast(outGrad, shape):
+    # handle the case of an operation between arrays of different dimensional space
+    # typically a bias vector (n,)
+    while outGrad.ndim > len(shape):
+        outGrad = outGrad.sum(axis=0)
+    # handle the case of different dimensional object in the same space
+    # typically a bias vector (1, n)
+    for i, dim in enumerate(shape):
+        if dim == 1:
+            outGrad = outGrad.sum(axis=i, keepdims=True)
+
+    return outGrad # Returns the unbroadcasted gradient array to use in the chain rule
+
 class Tensor:
     """
-    The fundamental build block of deep learning.
+    The fundamental building block of deep learning.
 
     A Tensor is an n-dimensional array storing real numbers (typically 32-bit floats)
     Using this elementary brick, we can describe all the abstractions we need:
@@ -12,8 +26,8 @@ class Tensor:
     - Gradients: The variation dependencies between each layer are captured by gradient tensors
     """
     def __init__(self, data, _prev=()):
-        self.data = np.asarray(data, dtype=np.float32) # the prefix "as"array avoid copy when data is already well formated
-        self.grad = np.zeros_like(self.data) # array of 0's with the same format as data
+        self.data = np.asarray(data, dtype=np.float32) # the prefix "asarray" avoids copying when data is already well formatted
+        self.grad = np.zeros_like(self.data) # array of zeros with the same shape and dtype as data
         self._prev = set(_prev)
         self._backward = lambda: None # by default a dummy function returning None
         # for leaf nodes in the autograd engine
@@ -22,6 +36,7 @@ class Tensor:
         return f"Tensor(data={self.data}, grad={self.grad})"
     
     
+        
     def __add__(self, other):
         if not isinstance(other, Tensor):
             other = Tensor(other)
@@ -29,8 +44,8 @@ class Tensor:
         out = Tensor(np.add(self.data, other.data), (self, other))
 
         def _backward():
-            self.grad += out.grad # use __iadd__ numpy implementation because numpy arrays are mutable
-            other.grad += out.grad
+            self.grad += unbroadcast(out.grad, self.shape()) # use += to accumulate contributions from each out node depending self node
+            other.grad += unbroadcast(out.grad, other.shape())
 
         out._backward = _backward
         return out
@@ -42,8 +57,8 @@ class Tensor:
         out = Tensor(np.multiply(self.data, other.data), (self, other))
 
         def _backward():
-            self.grad += np.multiply(other.data, out.grad)
-            other.grad += np.multiply(self.data, out.grad)
+            self.grad += unbroadcast(np.multiply(other.data,out.grad), self.shape())
+            other.grad += unbroadcast(np.multiply(self.data, out.grad), other.shape()) 
 
         out._backward = _backward
         return out
@@ -54,7 +69,7 @@ class Tensor:
         out = Tensor(np.power(self.data, other), (self,))
         def _backward():
             self.grad += other * np.power(self.data, other - 1) * out.grad # d(out)/dself = d(self^n)/dself = n * self ^(n-1)
-            # other is not a variable so need to have its gradient
+            # other is not a variable and does not receive gradients
         out._backward = _backward
         return out
     
@@ -82,9 +97,29 @@ class Tensor:
     def sum(self, axis = None, keepdims=False):
         out = Tensor(np.sum(self.data, axis = axis, keepdims = keepdims), (self,))
         def _backward():
-            self.grad += out.grad # taking advantage of numpy broadcasting since out.grad is usually smaller
+            # handle cleanly the broadcasting according to the collapsed axis during forward pass
+            grad = out.grad # to keep out.grad in its own shape
+            if not keepdims and axis is not None: # if axis is None sum flatten everything into an scalar which the default broadcasting handle well
+                grad = np.expand_dims(grad, axis) # reshape out.grad to make is match self.grad
+            self.grad += grad
         out._backward = _backward
         return out
+    
+    def max(self, axis=None, keepdims=False):
+        out = Tensor(np.max(self.data, axis=axis, keepdims=keepdims), (self,))
+
+        def _backward():
+            grad = out.grad
+            # keepdims version for broadcasting the mask back to input shape
+            max_keep = np.max(self.data, axis=axis, keepdims=True)
+            mask = (self.data == max_keep) # makes a mask with ones for each index of the elements = max
+            if not keepdims and axis is not None:
+                grad = np.expand_dims(grad, axis)
+            counts = np.sum(mask, axis=axis, keepdims=True)
+            self.grad += mask * grad / counts
+        out._backward = _backward
+        return out
+
 
     def __matmul__(self, other):
         if not isinstance(other, Tensor):
@@ -103,21 +138,21 @@ class Tensor:
         out = Tensor(self.data[key], (self,)) # using numpy __getitem__
         
         def _backward():
-            np.add.at(self.grad, key, out.grad)   # handles repeated indices safely to avoid overwriting
+            grad = np.zeros_like(self.data)
+            # handles repeated indices safely,
+            # If there are repeated indices, it adds each out.grad to the corresponding self[key]
+            np.add.at(grad, key, out.grad)
             self.grad += grad
         out._backward = _backward
         return out
     
-
-
-
-
     def __neg__(self):
         return self * -1
     
     def __sub__(self, other):
         return self + (-other)
     
+    # reflected operations to handle NotATensor.__operation__(Tensor) by calling Tensor.__operation__(NotATensor)
     def __rsub__(self, other):
         return (-self) + other
     
@@ -134,13 +169,13 @@ class Tensor:
         return (self ** - 1) * other
     
 
-    # to reset gradient after each gradient descent
+    # to reset gradient after each gradient descent step
     def zero_grad(self):
         self.grad = np.zeros_like(self.data)
     
-    # Construction of the neural net graph and gradient descent
+    # Construction of the computation graph and gradient descent
     def backward(self):
-        # topological order of all the children in the graph
+        # Build topological ordering of all nodes in the computation graph
         topo = []
         visited = set()
         def build_topo(v):
@@ -152,26 +187,51 @@ class Tensor:
 
         build_topo(self)
 
-        self.grad = np.ones_like(self.data) # array of 1's the same shape as data
+        self.grad = np.ones_like(self.data) # array of ones with the same shape as data
         for v in reversed(topo):
             v._backward()
     
     
 
 
-    # property makes the method behaves like an attribute, so can call .shape .size .ndim
-    @property
+    # getter functions
+    
     def shape(self):
         return self.data.shape
     
-    @property
+    
     def size(self):
         return self.data.size
     
-    @property
-    def ndim(self): # dimensions's number
+    
+    def ndim(self): # number of dimensions
         return self.data.ndim
 
+    # loss functions using building block functions (not efficient)
+    def softmax(self):
+        shifted = (self - self.max(axis=-1, keepdims=True))
+        return shifted.exp() / (shifted.exp().sum(axis = -1))
+    
+    def crossEntropy(self, target):
+        return -(self[..., target].log())
+
+
+    
 if __name__ == "__main__":
-    print("test area:")
+    y = np.array([0, 1, 0, 0, 0, 0, 0, 0, 0, 0,])
+    key = y.argmax()
+    
+    inputSoftmax = Tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    proba = inputSoftmax.softmax()
+    loss = proba.crossEntropy(key)
+    print(f"proba:{proba}")
+    print(f"loss:{loss}")
+    loss.backward()
+    print(f"inputSoftmax.grad: {inputSoftmax.grad}")
+
+    print(f"the gradient of the loss is [(proba of the target) - 1] (real proba) :{proba[key] - 1}")
+
+    
+    
+
     
