@@ -1,0 +1,1 @@
+![CI](https://github.com/<your-username>/femtotorch/actions/workflows/ci.yml/badge.svg)
