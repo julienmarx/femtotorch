@@ -1,1 +1,1 @@
-![CI](https://github.com/<your-username>/femtotorch/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/julienmarx/femtotorch/actions/workflows/ci.yml/badge.svg)](https://github.com/julienmarx/femtotorch/actions)
