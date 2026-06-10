@@ -190,9 +190,6 @@ class Tensor:
         self.grad = np.ones_like(self.data) # array of ones with the same shape as data
         for v in reversed(topo):
             v._backward()
-    
-    
-
 
     # getter functions
     
@@ -216,20 +213,9 @@ class Tensor:
         return -(self[..., target].log())
 
 
-    
-if __name__ == "__main__":
-    y = np.array([0, 1, 0, 0, 0, 0, 0, 0, 0, 0,])
-    key = y.argmax()
-    
-    inputSoftmax = Tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-    proba = inputSoftmax.softmax()
-    loss = proba.crossEntropy(key)
-    print(f"proba:{proba}")
-    print(f"loss:{loss}")
-    loss.backward()
-    print(f"inputSoftmax.grad: {inputSoftmax.grad}")
 
-    print(f"the gradient of the loss is [(proba of the target) - 1] (real proba) :{proba[key] - 1}")
+    
+
 
     
     

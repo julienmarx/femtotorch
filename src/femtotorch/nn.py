@@ -13,6 +13,6 @@ class Layer():
     
     def __call__(self, X): # forward pass but with Layer(X)
         linear = (X @ self.W) + self.B
-        return linear.
-        
+        return linear.relu()
+    
         
