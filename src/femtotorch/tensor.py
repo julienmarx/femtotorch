@@ -101,6 +101,7 @@ class Tensor:
             grad = out.grad # to keep out.grad in its own shape
             if not keepdims and axis is not None: # if axis is None sum flatten everything into an scalar which the default broadcasting handle well
                 grad = np.expand_dims(grad, axis) # reshape out.grad to make is match self.grad
+
             self.grad += grad
         out._backward = _backward
         return out
@@ -110,13 +111,15 @@ class Tensor:
 
         def _backward():
             grad = out.grad
-            # keepdims version for broadcasting the mask back to input shape
-            max_keep = np.max(self.data, axis=axis, keepdims=True)
-            mask = (self.data == max_keep) # makes a mask with ones for each index of the elements = max
-            if not keepdims and axis is not None:
+            # keepdims to have a mask which has self.grad shape
+            input_shape = np.max(self.data, axis=axis, keepdims=True)
+            mask = (self.data == input_shape) # makes a mask with ones for each index of the elements = max
+
+            if not keepdims and axis is not None: # cases where grad needs explicit broadcasting to fit correctly self.grad
                 grad = np.expand_dims(grad, axis)
-            counts = np.sum(mask, axis=axis, keepdims=True)
-            self.grad += mask * grad / counts
+            counts = np.sum(mask, axis=axis, keepdims=True) # number of element equals to max 
+
+            self.grad += mask * grad / counts # share the grad to each contributing element
         out._backward = _backward
         return out
 
@@ -145,6 +148,7 @@ class Tensor:
             self.grad += grad
         out._backward = _backward
         return out
+    
     
     def __neg__(self):
         return self * -1
@@ -204,13 +208,9 @@ class Tensor:
     def ndim(self): # number of dimensions
         return self.data.ndim
 
-    # loss functions using building block functions (not efficient)
-    def softmax(self):
-        shifted = (self - self.max(axis=-1, keepdims=True))
-        return shifted.exp() / (shifted.exp().sum(axis = -1))
+   
     
-    def crossEntropy(self, target):
-        return -(self[..., target].log())
+  
 
 
 
