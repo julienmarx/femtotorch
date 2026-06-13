@@ -6,7 +6,8 @@ from  femtotorch.tensor import Tensor
 
 def softmax(self):
     shifted = (self - self.max(axis=-1, keepdims=True))
-    return shifted.exp() / (shifted.exp().sum(axis = -1, keepdims=True))
+    e = shifted.exp()
+    return e / (e.sum(axis = -1, keepdims=True))
 
 #the tensor self is a batch of vectors of proba (batch_size * 10)
 #the tensor target is a batch of one-hot vectors (batch_size * 10) so it acts as a mask
