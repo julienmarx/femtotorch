@@ -30,7 +30,7 @@ class MLP():
 
         sizes = [nin] + nouts # each contiguous couple of integers in this list gives info for layers
         self.layers = []
-        
+
         # Iterate through to create all hidden layers with ReLU
         for i in range(len(nouts) - 1):
             self.layers.append(Layer(sizes[i], sizes[i+1], activation=True))
@@ -44,4 +44,5 @@ class MLP():
         return X
     
     def parameters(self):
+        # use list comprehension syntax to flatten all sublists [self.W, self.B] in an unique list without sublist
         return [p for layer in self.layers for p in layer.parameters()]
