@@ -127,6 +127,8 @@ class Tensor:
     def __matmul__(self, other):
         if not isinstance(other, Tensor):
             other = Tensor(other)
+        # matmul contract to avoid shape managing
+        assert self.data.ndim >= 2 and other.data.ndim >= 2, "matmul expects ≥2D operands: a single example is (1, D), not (D,)"
 
         out = Tensor(np.matmul(self.data, other.data), (self, other))
         def _backward():
@@ -149,7 +151,7 @@ class Tensor:
         out._backward = _backward
         return out
     
-    
+
     def __neg__(self):
         return self * -1
     
