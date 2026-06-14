@@ -123,6 +123,10 @@ class Tensor:
         out._backward = _backward
         return out
 
+    def mean(self, axis=None, keepdims=False):
+        s = self.sum(axis = axis, keepdims=keepdims)
+        n = self.size() if axis is None else self.size()[axis] # if axis is None the whole tensor is collapsed into a scalar so n is .size()
+        return s * (1.0 / n)
 
     def __matmul__(self, other):
         if not isinstance(other, Tensor):
