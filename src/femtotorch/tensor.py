@@ -201,6 +201,12 @@ class Tensor:
         for v in reversed(topo):
             v._backward()
 
+    # for inference
+    def argmax(self, axis=None, keepdims=False):
+        out = Tensor(np.argmax(self.data, axis=axis, keepdims=keepdims), (self,))
+        return out
+
+
     # getter functions
     
     def shape(self):
