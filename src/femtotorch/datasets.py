@@ -19,7 +19,7 @@ def read_idx(path):
 def one_hot(labels, num_classes = 10):
     labels = np.asarray(labels)
     out = np.zeros((labels.shape[0], num_classes), dtype=np.float32) # 60000 * 10 matrix
-    out[np.arrange(labels.shape[0]), labels] = 1 # [[0, 1, ..., 59999], [1, 9, .., 3]] assigns a 1 in each row
+    out[np.arange(labels.shape[0]), labels] = 1 # [[0, 1, ..., 59999], [1, 9, .., 3]] assigns a 1 in each row
     return out
 
 def load_mnist(data_dir):
