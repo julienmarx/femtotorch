@@ -9,7 +9,15 @@ rng = np.random.default_rng()
 class Layer():
 
     def __init__(self, nin, nout, activation = True):
-        self.W = Tensor(rng.uniform(-1.0, 1.0, size= (nin, nout)))
+        # std using He (if ReLU), std using Xavier-Glorot (if not)
+
+        # without it training the MLP was impossible because the std exploded after just one hidden layer
+        # which led to underflow in the loss function with exp(big_negative_number) = 0 by underflow
+        # then the proba = 0 was fed into the gradient of crossentropy which has a log and log(0) = inf ;(
+        std = np.sqrt(2.0/nin) if activation else np.sqrt(1/nin)
+        self.W = Tensor(rng.standard_normal((nin, nout)) * std)
+        # Original initialization: self.W = Tensor(rng.uniform(-1.0, 1.0, size= (nin, nout)))
+        
         self.B = Tensor(np.zeros((1, nout)))
         self.activation = activation
 
