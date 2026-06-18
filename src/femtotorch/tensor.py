@@ -25,8 +25,8 @@ class Tensor:
     - Signal: The data flowing forward through the model is represented by successive tensors of intermediate values
     - Gradients: The variation dependencies between each layer are captured by gradient tensors
     """
-    def __init__(self, data, _prev=()):
-        self.data = np.asarray(data, dtype=np.float32) # the prefix "asarray" avoids copying when data is already well formatted
+    def __init__(self, data, _prev=(), dtype = np.float32):
+        self.data = np.asarray(data, dtype = dtype) # the prefix "asarray" avoids copying when data is already well formatted
         self.grad = np.zeros_like(self.data) # array of zeros with the same shape and dtype as data
         self._prev = set(_prev)
         self._backward = lambda: None # by default a dummy function returning None
@@ -125,7 +125,7 @@ class Tensor:
 
     def mean(self, axis=None, keepdims=False):
         s = self.sum(axis = axis, keepdims=keepdims)
-        n = self.size() if axis is None else self.size()[axis] # if axis is None the whole tensor is collapsed into a scalar so n is .size()
+        n = self.size() if axis is None else self.shape()[axis] # if axis is None the whole tensor is collapsed into a scalar so n is .size()
         return s * (1.0 / n)
 
     def __matmul__(self, other):
