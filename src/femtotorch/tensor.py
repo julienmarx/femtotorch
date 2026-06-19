@@ -25,7 +25,14 @@ class Tensor:
     - Signal: The data flowing forward through the model is represented by successive tensors of intermediate values
     - Gradients: The variation dependencies between each layer are captured by gradient tensors
     """
-    def __init__(self, data, _prev=(), dtype = np.float32):
+    def __init__(self, data, _prev=(), dtype = None):
+        
+        if dtype is None:
+            if hasattr(data, "dtype"):
+                dtype = data.dtype
+            else:
+                dtype = np.float32
+
         self.data = np.asarray(data, dtype = dtype) # the prefix "asarray" avoids copying when data is already well formatted
         self.grad = np.zeros_like(self.data) # array of zeros with the same shape and dtype as data
         self._prev = set(_prev)
