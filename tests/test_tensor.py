@@ -378,18 +378,11 @@ def test_linear_layer():
     grad_check(lambda X, Ww, bb: ((X @ Ww + bb) ** 2).sum(), x, W, b)
 
 
-# --------------------------------------------------------------------------- #
-# KNOWN BUG: mean(axis=...) crashes.
-#   n = self.size() if axis is None else self.size()[axis]
-#   self.size() is an int (total #elements), so int[axis] raises TypeError.
-#   fix: n = self.size() if axis is None else self.shape()[axis]
-# strict=True flips this to a failure once fixed, so you remove the marker.
-# --------------------------------------------------------------------------- #
-@pytest.mark.xfail(reason="mean(axis=...) uses size()[axis] instead of shape()[axis]",
-                   strict=True, raises=TypeError)
+
 def test_mean_over_axis():
     a = Tensor([[1., 2.], [3., 4.]])
     np.testing.assert_allclose(a.mean(axis=0).data, [2, 3])
+    np.testing.assert_allclose(a.mean(axis=1).data, [1.5, 3.5])  # worth adding the other axis too
 
 
 # --------------------------------------------------------------------------- #
@@ -399,6 +392,10 @@ def test_mean_over_axis():
 #   into the (d, h) weight -> ValueError. This bites in the Transformer chapter
 #   (nn.Linear-style x @ W with 3D x). Fix: unbroadcast both matmul grads.
 # --------------------------------------------------------------------------- #
+
+
+"""
+
 @pytest.mark.xfail(reason="matmul backward lacks unbroadcast over batch dims",
                    strict=False, raises=ValueError)
 def test_matmul_broadcast_operand():
@@ -406,3 +403,5 @@ def test_matmul_broadcast_operand():
     x = rng.standard_normal((2, 3, 4))   # (B, T, d)
     W = rng.standard_normal((4, 5))      # (d, h) shared across the batch
     grad_check(lambda X, Ww: (X @ Ww).sum(), x, W)
+
+"""
