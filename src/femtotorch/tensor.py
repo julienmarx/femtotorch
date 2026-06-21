@@ -162,6 +162,45 @@ class Tensor:
         out._backward = _backward
         return out
     
+    @staticmethod # static because we dont want to consider one of the tensor self and create arbitrary hierarchy
+    def stack(tensors): # tensors is a list of tensor typically a list of result of convolutions in CNN
+        # only support stack on axis = 0
+        out = Tensor(np.stack([t.data for t in tensors]), set(tensors))
+
+        def _backward():
+            # out.data has shape (N, *t.shape); slice i is the i-th input's grad, the i-th tensor
+            # concretly out.data is a column vector of tensors
+            for i, t in enumerate(tensors):
+                t.grad += out.grad[i]
+        out._backward = _backward
+
+        return out
+    
+    def pad_zeros(self, *pad_width):
+        out = Tensor(np.pad(self.data, pad_width = pad_width, mode='constant', constant_values=0), (self,))
+
+        def _backward():
+            crop = []
+            for axis, (front_pad, back_pad) in enumerate(pad_width):
+                out_length = out.data.shape[axis]
+                crop.append(slice(front_pad, out_length - back_pad)) # slice is [front_pad, out_length - back_pad]
+
+            self.grad += out.grad[tuple(crop)] # use [((frond pad, out_length-back_pad), ...)]
+        
+        out._backward = _backward
+
+        return out
+
+    def reshape(self, *shape): #*shape so it pack input arguement in a tupple
+        out = Tensor(self.data.reshape(shape), (self,)) # (self,) not self: _prev must be a tuple of parents, else set() iterates the Tensor
+
+        def _backward():
+            self.grad += out.grad.reshape(self.data.shape)
+
+        out._backward = _backward
+
+        return out
+
 
     def __neg__(self):
         return self * -1

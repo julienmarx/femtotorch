@@ -302,6 +302,149 @@ def test_getitem_repeated_indices():
 
 
 #-------------------------------#
+# Pad
+
+def test_pad_zeros_forward():
+    a = Tensor([[1., 2.], [3., 4.]])
+    out = a.pad_zeros((1, 1), (1, 1))                          # 1 of zeros all around
+    assert out.shape() == (4, 4)
+    np.testing.assert_allclose(out.data, np.pad(a.data, ((1, 1), (1, 1))))
+
+
+def test_pad_zeros_asymmetric_forward():
+    a = Tensor([[1., 2., 3.]])
+    out = a.pad_zeros((2, 0), (1, 3))                          # different front/back per axis
+    assert out.shape() == (3, 7)
+    np.testing.assert_allclose(out.data, np.pad(a.data, ((2, 0), (1, 3))))
+
+
+def test_pad_zeros_prev_is_the_real_parent():
+    a = Tensor([[1., 2.], [3., 4.]])
+    assert a.pad_zeros((1, 1), (1, 1))._prev == {a}
+
+
+def test_pad_zeros_grad():
+    a = np.array([[1., 2.], [3., 4.]])
+    grad_check(lambda x: (x.pad_zeros((1, 1), (1, 1)) ** 2).sum(), a)
+    grad_check(lambda x: (x.pad_zeros((2, 0), (0, 3)) ** 2).sum(), a)   # asymmetric
+
+
+def test_pad_zeros_grad_drops_border_keeps_interior():
+    # f = sum(pad^2): interior grad is 2*x, the zero border contributes nothing
+    a = Tensor([[1., 2.], [3., 4.]])
+    (a.pad_zeros((1, 1), (1, 1)) ** 2).sum().backward()
+    assert a.grad.shape == (2, 2)                              # routed back to original shape
+    np.testing.assert_allclose(a.grad, 2 * a.data)
+
+
+def test_pad_zeros_of_intermediate_propagates_further():
+    # pad sits mid-graph; gradient must reach the leaf below it
+    a = Tensor([[1., 2., 3.]])
+    (a * 2).pad_zeros((1, 0), (0, 2)).sum().backward()
+    np.testing.assert_allclose(a.grad, [[2, 2, 2]])            # d/da of sum(2a) = 2
+
+
+def test_pad_zeros_no_padding_is_identity():
+    a = Tensor([[1., 2.], [3., 4.]])
+    out = a.pad_zeros((0, 0), (0, 0))
+    np.testing.assert_allclose(out.data, a.data)
+    (out ** 2).sum().backward()
+    np.testing.assert_allclose(a.grad, 2 * a.data)
+
+
+#-------------------------------#
+# Reshape
+
+def test_reshape_forward():
+    a = Tensor([[1., 2., 3.], [4., 5., 6.]])
+    out = a.reshape(3, 2)
+    assert out.shape() == (3, 2)
+    np.testing.assert_allclose(out.data, [[1, 2], [3, 4], [5, 6]])
+    np.testing.assert_allclose(out.reshape(6).data, [1, 2, 3, 4, 5, 6])   # flatten
+
+
+def test_reshape_prev_is_the_real_parent():
+    # _prev must hold the source tensor itself, not slices from iterating it
+    a = Tensor([[1., 2., 3.], [4., 5., 6.]])
+    out = a.reshape(6)
+    assert out._prev == {a}
+
+
+def test_reshape_grad():
+    a = np.array([[1., 2., 3.], [4., 5., 6.]])
+    grad_check(lambda x: (x.reshape(3, 2) ** 2).sum(), a)
+    grad_check(lambda x: (x.reshape(6) ** 2).sum(), a)
+
+
+def test_reshape_grad_routes_back_to_original_shape():
+    a = Tensor([[1., 2., 3.], [4., 5., 6.]])
+    (a.reshape(6) ** 2).sum().backward()              # grad = 2*data, in a's shape
+    assert a.grad.shape == (2, 3)
+    np.testing.assert_allclose(a.grad, 2 * a.data)
+
+
+def test_reshape_of_intermediate_propagates_further():
+    # reshape sits mid-graph; gradient must keep flowing to the leaves below it
+    x = Tensor([[1., 2., 3.], [4., 5., 6.]])
+    w = Tensor([[1., 1., 1.], [1., 1., 1.]])
+    ((x * w).reshape(6)).sum().backward()
+    np.testing.assert_allclose(x.grad, [[1, 1, 1], [1, 1, 1]])   # d/dx = w
+    np.testing.assert_allclose(w.grad, x.data)                   # d/dw = x
+
+
+def test_reshape_of_scalar_intermediate():
+    # 0-d intermediate can't be iterated; the parent must still be wired up
+    x = Tensor([1., 2., 3.])
+    x.sum().reshape(1).backward()
+    np.testing.assert_allclose(x.grad, [1, 1, 1])
+
+
+#-------------------------------#
+# Stack
+
+def test_stack_forward():
+    a = Tensor([1., 2., 3.])
+    b = Tensor([4., 5., 6.])
+    out = Tensor.stack([a, b])
+    assert out.shape() == (2, 3)                          # new leading axis
+    np.testing.assert_allclose(out.data, [[1, 2, 3], [4, 5, 6]])
+
+
+def test_stack_grad():
+    # each input's grad is its own slice of out.grad, not a broadcast scalar
+    a = np.array([1., 2., 3.])
+    b = np.array([4., 5., 6.])
+    c = np.array([-1., 0., 7.])
+    grad_check(lambda *xs: Tensor.stack(list(xs)).sum(), a, b, c)
+    # weight the slices differently so a bug that ignores position is caught
+    grad_check(lambda *xs: (Tensor.stack(list(xs)) ** 2).sum(), a, b, c)
+
+
+def test_stack_grad_values():
+    a = Tensor([1., 2., 3.])
+    b = Tensor([4., 5., 6.])
+    (Tensor.stack([a, b]) ** 2).sum().backward()          # f = sum(stack^2) -> grad = 2*data
+    np.testing.assert_allclose(a.grad, [2, 4, 6])
+    np.testing.assert_allclose(b.grad, [8, 10, 12])
+
+
+def test_stack_scalars():
+    a, b = Tensor(2.), Tensor(5.)
+    out = Tensor.stack([a, b])
+    assert out.shape() == (2,)
+    out.sum().backward()
+    np.testing.assert_allclose(a.grad, 1)
+    np.testing.assert_allclose(b.grad, 1)
+
+
+def test_stack_repeated_input_accumulates():
+    # the same tensor stacked twice must accumulate gradient from both slices
+    a = Tensor([1., 2.])
+    Tensor.stack([a, a]).sum().backward()
+    np.testing.assert_allclose(a.grad, [2, 2])
+
+
+#-------------------------------#
 # Inference helper
 
 def test_argmax():
