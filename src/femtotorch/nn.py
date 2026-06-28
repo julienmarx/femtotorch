@@ -121,10 +121,15 @@ class Conv2d():
 
 if __name__ == "__main__":
     convlayer = Conv2d()
-    out = convlayer(Tensor(np.array([[[[1,2,3],
-                                       [4,5,6],
-                                       [7,8,9]]
-                                       ]])))
-    print(out)
-    print(out.grad)
+    x = Tensor(np.array([[[[1.0, 2.0, 3.0],
+                           [4.0, 5.0, 6.0],
+                           [7.0, 8.0, 9.0]]]]))   # float input -> float grads
+
+    out = (convlayer(x) ** 2).sum()  # reduce to a scalar so backward has a single seed
+
+    out.backward()                   # actually run backprop
+
+    print("loss:", out.data)
+    print("kernel grad:\n", convlayer.W.grad)  # non-trivial gradient matrix
+    print("input grad:\n", x.grad)
 
