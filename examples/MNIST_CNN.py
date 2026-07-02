@@ -1,4 +1,6 @@
 """
+Version to compare with vanilla cnn
+
 import femtotorch as ft
 import numpy as np
 
@@ -81,7 +83,7 @@ for epochs in range(30):
     # inference
     pred = ft.softmax(model((conv(ft.Tensor(Xtest).reshape(-1, 1, 28, 28)).relu()).reshape(-1, 784))).argmax(axis = -1)
     accuracy = (pred.data == Ytest).mean()
-    
+
     print(f"test accuracy: {accuracy}")
 
 

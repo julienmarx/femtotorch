@@ -5,7 +5,6 @@ from  femtotorch.tensor import Tensor
 rng = np.random.default_rng()
 
 
-
 class Layer():
 
     def __init__(self, nin, nout, activation = True):
@@ -117,7 +116,10 @@ class Vanilla_Conv2d():
         self.W.zero_grad()
         self.B.zero_grad()
 
-
+    def size_map(self, in_height, in_width):
+        out_height = ((in_height - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
+        out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+        return self.out_channels * out_height * out_width
 
 
 
