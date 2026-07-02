@@ -201,6 +201,14 @@ class Tensor:
 
         return out
 
+    def swapaxes(self, axis1, axis2):
+        out = Tensor(self.data.swapaxes(axis1, axis2), (self,))
+
+        def _backward():
+            self.grad += out.grad.swapaxes(axis1, axis2)
+
+        out._backward = _backward
+        return out
 
     def __neg__(self):
         return self * -1
@@ -275,7 +283,3 @@ class Tensor:
     
 
 
-    
-    
-
-    

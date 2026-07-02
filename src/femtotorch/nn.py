@@ -56,9 +56,9 @@ class MLP():
         return [p for layer in self.layers for p in layer.parameters()]
     
 
-class Conv2d():
+class Vanilla_Conv2d():
 
-    def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1, bias=False):
+    def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
@@ -69,7 +69,6 @@ class Conv2d():
         fan_in = kernel_size * kernel_size * in_channels
         std = np.sqrt(2.0/(fan_in))
         self.W = Tensor(rng.standard_normal((out_channels, in_channels, kernel_size, kernel_size)) * std)
-        
         self.B = Tensor(np.zeros((1, out_channels, 1, 1)))
         
         
@@ -82,7 +81,7 @@ class Conv2d():
         out_vals = [] 
 
         
-        padded_in = X.pad_zeros((0, 0), (0, 0), (self.padding, self.padding), (self.padding, self.padding))
+        padded_X = X.pad_zeros((0, 0), (0, 0), (self.padding, self.padding), (self.padding, self.padding))
 
         for b in range(batch): # considering X shape (batch, (in) chanels, height, width)
             for out_ch in range(self.out_channels):
@@ -94,7 +93,7 @@ class Conv2d():
                         conv_sum = 0
 
                         for in_ch in range(self.in_channels):
-                            input_window = padded_in[
+                            input_window = padded_X[
                                                     b,
                                                     in_ch,
                                                     in_h_start:in_h_start + self.kernel_size,
@@ -119,6 +118,76 @@ class Conv2d():
         self.B.zero_grad()
 
 
+
+
+
+class Conv2d():
+    def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1):
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        # fan_in = number of weights
+        self.fan_in = kernel_size * kernel_size * in_channels
+
+        std = np.sqrt(2.0/(self.fan_in))
+        self.W = Tensor(rng.standard_normal((self.fan_in, self.out_channels)) * std) # the weights are flatten to addapt to
+        self.B = Tensor(np.zeros((1, out_channels, 1, 1)))
+
+        
+
+    def __call__(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
+        # kernel is square matrix
+        out_height = ((X.data.shape[-2] - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
+        out_width = ((X.data.shape[-1] - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+
+        batch = X.data.shape[-4]
+        patches_list = [] # will store batch of input batch that will be stack and flatten to use im2col
+        padded_X = X.pad_zeros((0, 0), (0, 0), (self.padding, self.padding), (self.padding, self.padding))
+
+        for out_h in range(out_height):
+            for out_w in range(out_width):
+                patch_h_start = out_h * self.stride
+                patch_w_start = out_w * self.stride
+
+                patch_ij = padded_X[
+                                    :,
+                                    :,
+                                    patch_h_start : patch_h_start + self.kernel_size, # i:j takes position [i, i + 1, ..., j - 1]
+                                    patch_w_start : patch_w_start + self.kernel_size
+                                    ] # shape of patch_ij = (batch, (in)channels, kernel_size, kernel_size)
+                
+                patches_list.append(patch_ij)
+        # patches_list becomes a Tensor of shape (out_height * out_width, batch, (in)channesl, kernel_size, kernel_size) 
+        im2col = Tensor.stack(patches_list)
+        im2col = im2col.swapaxes(0, 1) # swap to have (batch, out_height * out_width, (in)channesl, kernel_size, kernel_size) 
+        im2col = im2col.reshape(batch * out_height * out_width, self.fan_in) 
+        
+        # the main gain compared to vanilla conv2d here all the operations are vectorized
+        # just one big node matmul instead of numerous node created inside the nested loops for each entry-wise multiplication operation
+        out_flatten = im2col @ self.W # shape is (batch * out_height * out_width, out_channels)
+        feature_map = out_flatten.reshape(batch, out_height, out_width, self.out_channels)
+
+        feature_map = feature_map.swapaxes(2, 3).swapaxes(1, 2) # shape (batch, out_channels, out_height, out_width)
+
+        out = feature_map + self.B 
+
+        return out # shape (batch, out_channels, out_height, out_width)
+    
+    def parameters(self):
+        return [self.W, self.B] # python list returns W and B reference
+    
+    def zero_grad(self):
+        self.W.zero_grad()
+        self.B.zero_grad()
+
+    def size_map(self, in_height, in_width):
+        out_height = ((in_height - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
+        out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+        return self.out_channels * out_height * out_width
+    
+    
 if __name__ == "__main__":
     convlayer = Conv2d()
     x = Tensor(np.array([[[[1.0, 2.0, 3.0],
@@ -132,4 +201,3 @@ if __name__ == "__main__":
     print("loss:", out.data)
     print("kernel grad:\n", convlayer.W.grad)  # non-trivial gradient matrix
     print("input grad:\n", x.grad)
-

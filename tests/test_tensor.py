@@ -398,6 +398,47 @@ def test_reshape_of_scalar_intermediate():
     x.sum().reshape(1).backward()
     np.testing.assert_allclose(x.grad, [1, 1, 1])
 
+#-------------------------------#
+# swapaxes
+
+
+def test_swapaxes_forward():
+    a = Tensor([[1., 2., 3.], [4., 5., 6.]]) # shape (2, 3)
+    out = a.swapaxes(0, 1)
+    assert out.shape() == (3, 2)
+    # Après swap, les colonnes deviennent des lignes
+    np.testing.assert_allclose(out.data, [[1, 4], [2, 5], [3, 6]])
+
+def test_swapaxes_prev_is_the_real_parent():
+    a = Tensor([[1., 2.], [3., 4.]])
+    out = a.swapaxes(0, 1)
+    assert out._prev == {a}
+
+def test_swapaxes_grad():
+    # Vérification par différence finie que le gradient est correct
+    a = np.array([[1., 2., 3.], [4., 5., 6.]])
+    grad_check(lambda x: (x.swapaxes(0, 1) ** 2).sum(), a)
+
+def test_swapaxes_grad_routes_back_to_original_shape():
+    a = Tensor([[1., 2., 3.], [4., 5., 6.]])
+    # Après swapaxes, la forme est (3, 2). Le gradient venant de la suite
+    # doit être re-swappé pour retrouver la forme (2, 3) de 'a'
+    (a.swapaxes(0, 1) ** 2).sum().backward()
+    assert a.grad.shape == (2, 3)
+    # Le gradient de (x^2) est 2x. Après swap, on vérifie que le gradient
+    # a bien été redistribué correctement sur l'original.
+    np.testing.assert_allclose(a.grad, 2 * a.data)
+
+
+def test_swapaxes_twice_is_identity():
+    # Propriété fondamentale: swapper deux fois les mêmes axes revient à l'original
+    a = Tensor([[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]) # 3D
+    out = a.swapaxes(0, 2).swapaxes(0, 2)
+    np.testing.assert_allclose(out.data, a.data)
+    
+    out.sum().backward()
+    np.testing.assert_allclose(a.grad, 1.0)
+
 
 #-------------------------------#
 # Stack
