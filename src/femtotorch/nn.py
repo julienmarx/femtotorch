@@ -189,6 +189,13 @@ class Conv2d():
         out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
         return self.out_channels * out_height * out_width
     
+    def out_height(self, in_height):
+        out_height = ((in_height - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
+        return out_height
+    
+    def out_width(self, in_width):
+        out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+        return out_width
     
 if __name__ == "__main__":
     convlayer = Conv2d()
