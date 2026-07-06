@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view # useful for im2col
 
 # helper function to allow backward pass on operations with numpy broadcasting
 def unbroadcast(outGrad, shape):
@@ -209,6 +210,51 @@ class Tensor:
 
         out._backward = _backward
         return out
+
+    def im2col(self, kernel_size, stride): 
+        """
+        self: Tensor of shape (batch, inchanel, height, width) expected to already be padded
+
+        kernel_size: considering a square kernel size
+        """
+        batch, in_channel, height, width = self.data.shape
+        out_height = (height - kernel_size) // stride + 1
+        out_width = (width - kernel_size) // stride + 1 
+
+        # if float32 each scalar in 4 bytes
+        # address(b, in_c, h, w) = base + w*4 + h*(w*4) + in_c * (h*w*4)
+
+        # returns a new metadata header so shape is (b, in_c, h-(k-1), w-(k-1), k, k)
+        # the map from header to memory becomes non injective (multiple elements of "window" corresponds to the same memory addres)
+        # strides = ( in_c * (h*w*4), h*w*4, 4*width, 4, 4*width, 4)
+        window = sliding_window_view(self.data, (kernel_size, kernel_size), axis=(-2, -1))
+        window = window[:, :, ::stride, ::stride, :, :]     # still shape 6D but (b, in_c, (h-(k-1) // stride)+1, (w-(k-1) // stride)+1, k, k) 
+        window = window.transpose(0, 2, 3, 1, 4, 5)   # shape (batch, out_height, out_width, in_c, k, k)
+        # reshape is the first operation that doesnt just change the view but copy the data so it's contiguous
+        cols = window.reshape(-1, in_channel * kernel_size * kernel_size) # finally the real physical gather
+        
+        out = Tensor(cols, (self,))
+
+        def _backward():
+            grad = out.grad.reshape(-1, out_height, out_width, in_channel, kernel_size, kernel_size)
+            grad = grad.transpose(0, 3, 1, 2, 4, 5)
+            
+            grad_to_add = np.zeros(self.data.shape, dtype=out.grad.dtype)
+
+            for ky in range(kernel_size):
+                for kx in range(kernel_size):
+                    grad_to_add[:, :,
+                                #  start = ky, step = stride, stop = ky + stride*out_h
+                                ky : ky + stride * out_height: stride, # so it selects out_height rows
+                                # it selects out_width columns, so grad_to_add have shape
+                                kx : kx + stride * out_width : stride] += grad[:, :, :, :, ky, kx] # axis 0 and 1 are selected so shape (batch, in_channel, out_height, out_width)
+            
+            self.grad += grad_to_add # shape (batch, inchanel, height, width)
+
+        out._backward = _backward
+
+        return out # shape (batch * out_width * out_height, fan_in)
+    
 
     def __neg__(self):
         return self * -1
