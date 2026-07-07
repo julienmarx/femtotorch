@@ -197,6 +197,64 @@ class Conv2d():
         out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
         return out_width
     
+
+class Opti_Conv2d():
+    def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1):
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.fan_in = kernel_size * kernel_size * in_channels
+
+        std = np.sqrt(2.0/(self.fan_in))
+        self.W = Tensor(rng.standard_normal((self.fan_in, self.out_channels)) * std) # the weights are flatten to addapt to
+        self.B = Tensor(np.zeros((1, out_channels, 1, 1)))
+
+        
+
+    def __call__(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
+        
+        out_height = ((X.data.shape[-2] - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
+        out_width = ((X.data.shape[-1] - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+
+        batch = X.data.shape[-4]
+        patches_list = [] # will store batch of input batch that will be stack and flatten to use im2col
+        padded_X = X.pad_zeros((0, 0), (0, 0), (self.padding, self.padding), (self.padding, self.padding))
+
+        # the loop with lots of python overhead and node in the gradient graph is replace by a vectorized im2col tensor operation
+
+        im2col = padded_X.im2col(kernel_size=self.kernel_size, stride=self.stride)
+        
+        out_flatten = im2col @ self.W # (batch * out_width * out_height, fan_in) @ (fan_in, out_channels) =(batch * out_height * out_width, out_channels)
+        feature_map = out_flatten.reshape(batch, out_height, out_width, self.out_channels)
+
+        feature_map = feature_map.swapaxes(2, 3).swapaxes(1, 2) # shape (batch, out_channels, out_height, out_width)
+
+        out = feature_map + self.B 
+
+        return out # shape (batch, out_channels, out_height, out_width)
+    
+    def parameters(self):
+        return [self.W, self.B]
+    
+    def zero_grad(self):
+        self.W.zero_grad()
+        self.B.zero_grad()
+
+    def size_map(self, in_height, in_width):
+        out_height = ((in_height - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
+        out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+        return self.out_channels * out_height * out_width
+    
+    def out_height(self, in_height):
+        out_height = ((in_height - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
+        return out_height
+    
+    def out_width(self, in_width):
+        out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+        return out_width
+
 if __name__ == "__main__":
     convlayer = Conv2d()
     x = Tensor(np.array([[[[1.0, 2.0, 3.0],
