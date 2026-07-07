@@ -1,6 +1,11 @@
 import numpy as np
+import os
 
-def save(path, parameters_list):
+def save(path, parameters_list, overwrite = False):
+
+    if os.path.exists(path) and not(overwrite):
+        raise FileExistsError("The path given is already taken by a file, use overwrite = True if you want to overwrite it")
+    
     array_dict = {f"p{i}": arr.data for i, arr in enumerate(parameters_list)}
     np.savez(path,**array_dict)
 
