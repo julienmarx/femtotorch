@@ -16,6 +16,7 @@ def unbroadcast(outGrad, shape):
 
     return outGrad # Returns the unbroadcasted gradient array to use in the chain rule
 
+
 class Tensor:
     """
     The fundamental building block of deep learning.
@@ -40,7 +41,7 @@ class Tensor:
 
         self.data = np.asarray(data, dtype = dtype) # the prefix "asarray" avoids copying when data is already well formatted
         # array of zeros with the same shape and dtype as data
-        self.grad = np.zeros_like(self.data) if Tensor.grad_mode else None # tensors created in no_grad() cant later join a training graph
+        self.grad = None # Lazy evaluation
         self._prev = set(_prev) if Tensor.grad_mode else set()
         self._backward = lambda: None # by default a dummy function returning None
         # for leaf nodes in the autograd engine
@@ -60,8 +61,8 @@ class Tensor:
             return out # without the closure below self and other are garbage collected
 
         def _backward():
-            self.grad += unbroadcast(out.grad, self.shape()) # use += to accumulate contributions from each out node depending self node
-            other.grad += unbroadcast(out.grad, other.shape())
+            self._accumulate_grad(unbroadcast(out.grad, self.shape()))   # accumulate contributions from each out node depending self node
+            other._accumulate_grad(unbroadcast(out.grad, other.shape()))
 
         out._backward = _backward
         return out
@@ -76,8 +77,8 @@ class Tensor:
             return out
         
         def _backward():
-            self.grad += unbroadcast(np.multiply(other.data,out.grad), self.shape())
-            other.grad += unbroadcast(np.multiply(self.data, out.grad), other.shape()) 
+            self._accumulate_grad(unbroadcast(np.multiply(other.data,out.grad), self.shape()))
+            other._accumulate_grad(unbroadcast(np.multiply(self.data, out.grad), other.shape()))
 
         out._backward = _backward
         return out
@@ -91,7 +92,7 @@ class Tensor:
             return out
         
         def _backward():
-            self.grad += other * np.power(self.data, other - 1) * out.grad # d(out)/dself = d(self^n)/dself = n * self ^(n-1)
+            self._accumulate_grad(other * np.power(self.data, other - 1) * out.grad) # d(out)/dself = d(self^n)/dself = n * self ^(n-1)
             # other is not a variable and does not receive gradients
         out._backward = _backward
         return out
@@ -103,7 +104,7 @@ class Tensor:
             return out
         
         def _backward():
-            self.grad += (out.data > 0) * out.grad
+            self._accumulate_grad((out.data > 0) * out.grad)
         out._backward = _backward
         return out
     
@@ -114,7 +115,7 @@ class Tensor:
             return out
         
         def _backward():
-            self.grad += out.data * out.grad
+            self._accumulate_grad(out.data * out.grad)
         out._backward = _backward
         return out
     
@@ -125,7 +126,7 @@ class Tensor:
             return out
         
         def _backward():
-            self.grad += out.grad / self.data 
+            self._accumulate_grad(out.grad / self.data)
         out._backward = _backward
         return out
     
@@ -141,7 +142,7 @@ class Tensor:
             if not keepdims and axis is not None: # if axis is None sum flatten everything into an scalar which the default broadcasting handle well
                 grad = np.expand_dims(grad, axis) # reshape out.grad to make is match self.grad
 
-            self.grad += grad
+            self._accumulate_grad(grad)
         out._backward = _backward
         return out
     
@@ -161,7 +162,7 @@ class Tensor:
                 grad = np.expand_dims(grad, axis)
             counts = np.sum(mask, axis=axis, keepdims=True) # number of element equals to max 
 
-            self.grad += mask * grad / counts # share the grad to each contributing element
+            self._accumulate_grad(mask * grad / counts) # share the grad to each contributing element
         out._backward = _backward
         return out
 
@@ -182,8 +183,8 @@ class Tensor:
             return out
         
         def _backward():
-            self.grad += out.grad @ np.swapaxes(other.data, -2, -1) # use numpy built in __matmul__ 
-            other.grad += np.swapaxes(self.data, -2, -1) @ out.grad
+            self._accumulate_grad(out.grad @ np.swapaxes(other.data, -2, -1)) # use numpy built in __matmul__
+            other._accumulate_grad(np.swapaxes(self.data, -2, -1) @ out.grad)
         out._backward = _backward
         return out
     
@@ -200,7 +201,7 @@ class Tensor:
             # handles repeated indices safely,
             # If there are repeated indices, it adds each out.grad to the corresponding self[key]
             np.add.at(grad, key, out.grad)
-            self.grad += grad
+            self._accumulate_grad(grad)
         out._backward = _backward
         return out
     
@@ -216,7 +217,7 @@ class Tensor:
             # out.data has shape (N, *t.shape); slice i is the i-th input's grad, the i-th tensor
             # concretly out.data is a column vector of tensors
             for i, t in enumerate(tensors):
-                t.grad += out.grad[i]
+                t._accumulate_grad(out.grad[i])
         out._backward = _backward
 
         return out
@@ -233,7 +234,7 @@ class Tensor:
                 out_length = out.data.shape[axis]
                 crop.append(slice(front_pad, out_length - back_pad)) # slice is [front_pad, out_length - back_pad]
 
-            self.grad += out.grad[tuple(crop)] # use [((frond pad, out_length-back_pad), ...)]
+            self._accumulate_grad(out.grad[tuple(crop)]) # use [((frond pad, out_length-back_pad), ...)]
         
         out._backward = _backward
 
@@ -246,7 +247,7 @@ class Tensor:
             return out
         
         def _backward():
-            self.grad += out.grad.reshape(self.data.shape)
+            self._accumulate_grad(out.grad.reshape(self.data.shape))
 
         out._backward = _backward
 
@@ -259,7 +260,7 @@ class Tensor:
             return out
         
         def _backward():
-            self.grad += out.grad.swapaxes(axis1, axis2)
+            self._accumulate_grad(out.grad.swapaxes(axis1, axis2))
 
         out._backward = _backward
         return out
@@ -305,7 +306,7 @@ class Tensor:
                                 # it selects out_width columns, so grad_to_add have shape
                                 kx : kx + stride * out_width : stride] += grad[:, :, :, :, ky, kx] # axis 0 and 1 are selected so shape (batch, in_channel, out_height, out_width)
             
-            self.grad += grad_to_add # shape (batch, inchanel, height, width)
+            self._accumulate_grad(grad_to_add) # shape (batch, inchanel, height, width)
 
         out._backward = _backward
 
@@ -377,7 +378,17 @@ class Tensor:
         return self.data.ndim
 
    
-   
+    def _accumulate_grad(self, g):
+        if self.grad is None:
+            self.grad = np.broadcast_to(g, self.data.shape).astype(self.data.dtype)
+        else:
+            self.grad += g
+
+
+
+
+
+
 @contextmanager #allows to use "with statements"
 def no_grad():
     Tensor.grad_mode = False
