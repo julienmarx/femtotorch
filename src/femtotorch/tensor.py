@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view # useful for im2col
+from contextlib import contextmanager
 
 # helper function to allow backward pass on operations with numpy broadcasting
 def unbroadcast(outGrad, shape):
@@ -26,6 +27,9 @@ class Tensor:
     - Signal: The data flowing forward through the model is represented by successive tensors of intermediate values
     - Gradients: The variation dependencies between each layer are captured by gradient tensors
     """
+
+    grad_mode = True
+
     def __init__(self, data, _prev=(), dtype = None):
         
         if dtype is None:
@@ -35,8 +39,9 @@ class Tensor:
                 dtype = np.float32
 
         self.data = np.asarray(data, dtype = dtype) # the prefix "asarray" avoids copying when data is already well formatted
-        self.grad = np.zeros_like(self.data) # array of zeros with the same shape and dtype as data
-        self._prev = set(_prev)
+        # array of zeros with the same shape and dtype as data
+        self.grad = np.zeros_like(self.data) if Tensor.grad_mode else None # tensors created in no_grad() cant later join a training graph
+        self._prev = set(_prev) if Tensor.grad_mode else set()
         self._backward = lambda: None # by default a dummy function returning None
         # for leaf nodes in the autograd engine
 
@@ -51,6 +56,9 @@ class Tensor:
 
         out = Tensor(np.add(self.data, other.data), (self, other))
 
+        if not Tensor.grad_mode: 
+            return out # without the closure below self and other are garbage collected
+
         def _backward():
             self.grad += unbroadcast(out.grad, self.shape()) # use += to accumulate contributions from each out node depending self node
             other.grad += unbroadcast(out.grad, other.shape())
@@ -64,6 +72,9 @@ class Tensor:
 
         out = Tensor(np.multiply(self.data, other.data), (self, other))
 
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             self.grad += unbroadcast(np.multiply(other.data,out.grad), self.shape())
             other.grad += unbroadcast(np.multiply(self.data, out.grad), other.shape()) 
@@ -75,6 +86,10 @@ class Tensor:
         assert isinstance(other, (float, int)), "does not support Tensor^Tensor only int/float powers"
 
         out = Tensor(np.power(self.data, other), (self,))
+
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             self.grad += other * np.power(self.data, other - 1) * out.grad # d(out)/dself = d(self^n)/dself = n * self ^(n-1)
             # other is not a variable and does not receive gradients
@@ -83,6 +98,10 @@ class Tensor:
     
     def relu(self):
         out = Tensor(np.maximum(0, self.data), (self,)) # np.maximum is the entry wise version of np.max
+
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             self.grad += (out.data > 0) * out.grad
         out._backward = _backward
@@ -90,6 +109,10 @@ class Tensor:
     
     def exp(self):
         out = Tensor(np.exp(self.data), (self,))
+
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             self.grad += out.data * out.grad
         out._backward = _backward
@@ -97,6 +120,10 @@ class Tensor:
     
     def log(self):
         out = Tensor(np.log(self.data), (self,))
+
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             self.grad += out.grad / self.data 
         out._backward = _backward
@@ -104,6 +131,10 @@ class Tensor:
     
     def sum(self, axis = None, keepdims=False):
         out = Tensor(np.sum(self.data, axis = axis, keepdims = keepdims), (self,))
+
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             # handle cleanly the broadcasting according to the collapsed axis during forward pass
             grad = out.grad # to keep out.grad in its own shape
@@ -116,6 +147,9 @@ class Tensor:
     
     def max(self, axis=None, keepdims=False):
         out = Tensor(np.max(self.data, axis=axis, keepdims=keepdims), (self,))
+
+        if not Tensor.grad_mode:
+            return out
 
         def _backward():
             grad = out.grad
@@ -143,6 +177,10 @@ class Tensor:
         assert self.data.ndim >= 2 and other.data.ndim >= 2, "matmul expects ≥2D operands: a single example is (1, D), not (D,)"
 
         out = Tensor(np.matmul(self.data, other.data), (self, other))
+
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             self.grad += out.grad @ np.swapaxes(other.data, -2, -1) # use numpy built in __matmul__ 
             other.grad += np.swapaxes(self.data, -2, -1) @ out.grad
@@ -153,6 +191,9 @@ class Tensor:
 
     def __getitem__(self, key): # self[key] index accessing operation
         out = Tensor(self.data[key], (self,)) # using numpy __getitem__
+        
+        if not Tensor.grad_mode:
+            return out
         
         def _backward():
             grad = np.zeros_like(self.data)
@@ -168,6 +209,9 @@ class Tensor:
         # only support stack on axis = 0
         out = Tensor(np.stack([t.data for t in tensors]), set(tensors))
 
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             # out.data has shape (N, *t.shape); slice i is the i-th input's grad, the i-th tensor
             # concretly out.data is a column vector of tensors
@@ -180,6 +224,9 @@ class Tensor:
     def pad_zeros(self, *pad_width):
         out = Tensor(np.pad(self.data, pad_width = pad_width, mode='constant', constant_values=0), (self,))
 
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             crop = []
             for axis, (front_pad, back_pad) in enumerate(pad_width):
@@ -195,6 +242,9 @@ class Tensor:
     def reshape(self, *shape): #*shape so it pack input arguement in a tupple
         out = Tensor(self.data.reshape(shape), (self,)) # (self,) not self: _prev must be a tuple of parents, else set() iterates the Tensor
 
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             self.grad += out.grad.reshape(self.data.shape)
 
@@ -205,6 +255,9 @@ class Tensor:
     def swapaxes(self, axis1, axis2):
         out = Tensor(self.data.swapaxes(axis1, axis2), (self,))
 
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             self.grad += out.grad.swapaxes(axis1, axis2)
 
@@ -235,6 +288,9 @@ class Tensor:
         
         out = Tensor(cols, (self,))
 
+        if not Tensor.grad_mode:
+            return out
+        
         def _backward():
             grad = out.grad.reshape(-1, out_height, out_width, in_channel, kernel_size, kernel_size)
             grad = grad.transpose(0, 3, 1, 2, 4, 5)
@@ -321,6 +377,16 @@ class Tensor:
         return self.data.ndim
 
    
+   
+@contextmanager #allows to use "with statements"
+def no_grad():
+    Tensor.grad_mode = False
+
+    try:
+        yield   # the body of the "with" block runs
+
+    finally:
+        Tensor.grad_mode = True # always restored, even if the "with" block crashes
     
   
 
