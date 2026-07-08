@@ -6,6 +6,6 @@ dist/
 wheels/
 *.egg-info
 data/
-
+checkpoints_weights/
 # Virtual environments
 .venv
