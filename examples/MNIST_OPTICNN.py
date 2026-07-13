@@ -7,16 +7,16 @@ class OptiCnnNet:
     
     def __init__(self):
         self.batch_size = 64
-        self.conv1 = ft.Opti_Conv2d(in_channels=1, out_channels=32, kernel_size=3, stride =1, padding=1) 
+        self.conv1 = ft.OptiConv2d(in_channels=1, out_channels=32, kernel_size=3, stride =1, padding=1) 
         self.out_conv1 = self.conv1.size_map(28, 28)
 
-        self.conv2 = ft.Opti_Conv2d(in_channels = 32, out_channels=32, kernel_size=3, stride = 2, padding=1)
+        self.conv2 = ft.OptiConv2d(in_channels = 32, out_channels=32, kernel_size=3, stride = 2, padding=1)
         self.out_conv2 = self.conv2.size_map(28, 28) # since conv1 output is 32 * 28 * 28
 
-        self.conv3 = ft.Opti_Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride =1, padding=1) 
+        self.conv3 = ft.OptiConv2d(in_channels=32, out_channels=64, kernel_size=3, stride =1, padding=1) 
         self.out_conv3 = self.conv3.size_map(14, 14) # since conv2 output is 32 * 14 * 14
 
-        self.conv4 = ft.Opti_Conv2d(in_channels = 64, out_channels=64, kernel_size=3, stride = 2, padding=1)
+        self.conv4 = ft.OptiConv2d(in_channels = 64, out_channels=64, kernel_size=3, stride = 2, padding=1)
         self.out_conv4 = self.conv4.size_map(14, 14) # since conv3 output is 64 * 14 * 14
 
         self.model = ft.MLP(self.out_conv4, [256, 10]) 
@@ -57,7 +57,7 @@ for epochs in range(1):
         gradient_updater.zero_grad() # reset previous gradients
 
         soft_out = net(Xbatch)
-        loss = ft.crossEntropy_MNIST(soft_out, ft.one_hot(Ybatch)).mean() # loss function take mean of the loss of all vectors in the batch
+        loss = ft.cross_entropy(soft_out, ft.one_hot(Ybatch)).mean() # loss function take mean of the loss of all vectors in the batch
         loss.backward() # update gradient
         gradient_updater.step() # update weights
         

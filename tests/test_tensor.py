@@ -11,7 +11,7 @@ def test_construction():
     t = Tensor([1, 2, 3])
     assert t.data.dtype == np.float32
     np.testing.assert_array_equal(t.data, [1, 2, 3])
-    np.testing.assert_array_equal(t.grad, [0, 0, 0])     # grad starts at zero
+    np.testing.assert_array_equal(t.grad, None)     # grad starts at zero
 
 
 def test_getters():

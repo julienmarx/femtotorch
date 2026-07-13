@@ -14,7 +14,7 @@ for epochs in range(5):
 
         gradient_updater.zero_grad() # reset previous gradients
         soft_out = ft.softmax(model(Xbatch)) # compute forward pass
-        loss = ft.crossEntropy_MNIST(soft_out, ft.one_hot(Ybatch)).mean() # loss function take mean of the loss of all vectors in the batch
+        loss = ft.cross_entropy(soft_out, ft.one_hot(Ybatch)).mean() # loss function take mean of the loss of all vectors in the batch
         loss.backward() # update gradient
         gradient_updater.step() # update weights
 

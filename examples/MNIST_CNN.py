@@ -24,7 +24,7 @@ for epochs in range(1):
         x = conv(Xbatch.reshape(-1, 1, 28, 28)).relu() # the -1 allows flexibility on the last batch 
         x = x.reshape(-1, 4*14*14)
         soft_out = ft.softmax(model(x)) # compute forward pass
-        loss = ft.crossEntropy_MNIST(soft_out, ft.one_hot(Ybatch)).mean() # loss function take mean of the loss of all vectors in the batch
+        loss = ft.cross_entropy(soft_out, ft.one_hot(Ybatch)).mean() # loss function take mean of the loss of all vectors in the batch
         loss.backward() # update gradient
         gradient_updater.step() # update weights
 
@@ -94,7 +94,7 @@ for epochs in range(20):
         x = x.reshape(-1, out_conv4)
 
         soft_out = ft.softmax(model(x)) # compute forward pass
-        loss = ft.crossEntropy_MNIST(soft_out, ft.one_hot(Ybatch)).mean() # loss function take mean of the loss of all vectors in the batch
+        loss = ft.cross_entropy(soft_out, ft.one_hot(Ybatch)).mean() # loss function take mean of the loss of all vectors in the batch
         loss.backward() # update gradient
         gradient_updater.step() # update weights
         

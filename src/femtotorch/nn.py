@@ -1,5 +1,5 @@
 import numpy as np
-from femtotorch.loss import crossEntropy_MNIST, softmax
+from femtotorch.loss import cross_entropy, softmax
 from  femtotorch.tensor import Tensor
 # Initialize the random number generator
 rng = np.random.default_rng()
@@ -55,7 +55,7 @@ class MLP():
         return [p for layer in self.layers for p in layer.parameters()]
     
 
-class Vanilla_Conv2d():
+class VanillaConv2d():
 
     def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1):
         self.in_channels = in_channels
@@ -198,7 +198,7 @@ class Conv2d():
         return out_width
     
 
-class Opti_Conv2d():
+class OptiConv2d():
     def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1, bias = True):
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -210,8 +210,7 @@ class Opti_Conv2d():
 
         std = np.sqrt(2.0/(self.fan_in))
         self.W = Tensor(rng.standard_normal((self.fan_in, self.out_channels)) * std) # the weights are flatten to addapt to
-        self.B = Tensor(np.zeros((1, out_channels, 1, 1))) if self.bias else self.B = None
-
+        self.B = Tensor(np.zeros((1, out_channels, 1, 1))) if self.bias else None
         
 
     def __call__(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
@@ -233,7 +232,9 @@ class Opti_Conv2d():
         feature_map = feature_map.swapaxes(2, 3).swapaxes(1, 2) # shape (batch, out_channels, out_height, out_width)
         if self.bias:
             out = feature_map + self.B 
-
+        else:
+            out = feature_map
+        
         return out # shape (batch, out_channels, out_height, out_width)
     
     def parameters(self):
