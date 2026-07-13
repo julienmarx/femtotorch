@@ -199,17 +199,18 @@ class Conv2d():
     
 
 class Opti_Conv2d():
-    def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1):
+    def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1, bias = True):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = padding
+        self.bias = bias
         self.fan_in = kernel_size * kernel_size * in_channels
 
         std = np.sqrt(2.0/(self.fan_in))
         self.W = Tensor(rng.standard_normal((self.fan_in, self.out_channels)) * std) # the weights are flatten to addapt to
-        self.B = Tensor(np.zeros((1, out_channels, 1, 1)))
+        self.B = Tensor(np.zeros((1, out_channels, 1, 1))) if self.bias else self.B = None
 
         
 
@@ -230,8 +231,8 @@ class Opti_Conv2d():
         feature_map = out_flatten.reshape(batch, out_height, out_width, self.out_channels)
 
         feature_map = feature_map.swapaxes(2, 3).swapaxes(1, 2) # shape (batch, out_channels, out_height, out_width)
-
-        out = feature_map + self.B 
+        if self.bias:
+            out = feature_map + self.B 
 
         return out # shape (batch, out_channels, out_height, out_width)
     
@@ -254,6 +255,42 @@ class Opti_Conv2d():
     def out_width(self, in_width):
         out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
         return out_width
+
+class MaxPool2d():
+    """
+    MaxPool layer with stride == kernel_size
+    The windows tile the input with no overlap, so the whole layer is a reshape
+    into windows followed by a max over the two in-window axes.
+    """
+    def __init__(self, kernel_size=2):
+        self.kernel_size = kernel_size
+        self.stride = kernel_size
+
+    def __call__(self, X: Tensor): # X has shape (batch, in_channels, height, width)
+        batch, in_channels, height, width = X.shape()
+        
+        assert height % self.kernel_size == 0 and width % self.kernel_size == 0,\
+        f"height or width is not a multiple of kernel_size"
+
+
+        window = X.reshape(batch,
+                            in_channels,
+                            height // self.kernel_size,
+                            self.kernel_size,
+                            width // self.kernel_size,
+                            self.kernel_size
+                            )
+        out = window.max(axis=(3, 5), keepdims=False)
+        return out # shape (batch, in_channels, out_height, out_width)
+    
+    def out_height(self, in_height):
+        out_height = in_height // self.kernel_size
+        return out_height
+    
+    def out_width(self, in_width):
+        out_width = in_width // self.kernel_size
+        return out_width
+
 
 if __name__ == "__main__":
     convlayer = Conv2d()
