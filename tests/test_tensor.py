@@ -259,6 +259,11 @@ def test_mean():
     np.testing.assert_allclose(Tensor(a).mean().data, 2.5)
     grad_check(lambda x: x.mean(), a)
 
+    X = Tensor(np.random.randn(8, 3, 4, 4))
+    mu = X.mean(axis=(0, 2, 3), keepdims=True)
+    np.testing.assert_allclose(mu.shape, (1, 3, 1 ,1))
+    np.allclose(mu.data, X.data.mean(axis=(0,2,3), keepdims=True))
+
 
 #-------------------------------#
 # Matmul

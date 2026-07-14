@@ -168,6 +168,23 @@ class Tensor:
 
     def mean(self, axis=None, keepdims=False):
         s = self.sum(axis = axis, keepdims=keepdims)
+
+        if axis is None: # in other words, f(self: tensor) = scalar
+            n = self.size
+
+        elif isinstance(axis, int): # a single selected axis
+            n = self.shape[axis] 
+
+        else:
+            n = 1
+            for a in axis: # axis is a tuple (so a least 2 selected axis)
+                n *= self.shape[a]
+
+        return s * 1 / n
+
+
+
+
         n = self.size if axis is None else self.shape[axis] # if axis is None the whole tensor is collapsed into a scalar so n is .size
         return s * (1.0 / n)
 
