@@ -1,11 +1,30 @@
 import numpy as np
-from femtotorch.loss import cross_entropy, softmax
 from  femtotorch.tensor import Tensor
+from abc import ABC, abstractmethod
+
+
 # Initialize the random number generator
 rng = np.random.default_rng()
 
 
-class Layer():
+class Module(ABC):
+
+    @abstractmethod
+    def forward(self, X):
+        """Compute output"""
+
+    def parameters(self):
+        """returns list of weights (Tensor objects)"""
+        return []
+
+    def __call__(self, X: Tensor):
+        return self.forward(X)
+    
+    def zero_grad(self):
+        for p in self.parameters():
+            p.grad = None # lazy initialization
+
+class Layer(Module):
 
     def __init__(self, nin, nout, activation = True):
         # std using He (if ReLU), std using Xavier-Glorot (if not)
@@ -15,23 +34,19 @@ class Layer():
         # then the proba = 0 was fed into the gradient of crossentropy which has a log and log(0) = inf ;(
         std = np.sqrt(2.0/nin) if activation else np.sqrt(1/nin)
         self.W = Tensor(rng.standard_normal((nin, nout)) * std)
-        # Original initialization: self.W = Tensor(rng.uniform(-1.0, 1.0, size= (nin, nout)))
+        # Problematic original initialization: rng.uniform(-1.0, 1.0, size= (nin, nout)))
         
         self.B = Tensor(np.zeros((1, nout)))
         self.activation = activation
 
-    def __call__(self, X): # forward pass but with Layer(X)
+    def forward(self, X): # forward pass but with Layer(X)
         linear = (X @ self.W) + self.B # the bias vector self.B is broadcasted
         return linear.relu() if self.activation else linear
     
     def parameters(self):
         return [self.W, self.B] # python list returns W and B reference
-    
-    def zero_grad(self):
-        self.W.zero_grad()
-        self.B.zero_grad()
 
-class MLP():
+class MLP(Module):
 
     def __init__(self, nin, nouts):
 
@@ -45,7 +60,7 @@ class MLP():
         # Append the final output layer without ReLU activation
         self.layers.append(Layer(sizes[-2], sizes[-1], activation=False))
 
-    def __call__(self, X):
+    def forward(self, X):
         for layer in self.layers:
             X = layer(X)
         return X
@@ -54,9 +69,22 @@ class MLP():
         # use list comprehension syntax to flatten all sublists [self.W, self.B] in an unique list without sublist
         return [p for layer in self.layers for p in layer.parameters()]
     
+def conv_out_size(shape, kernel_size, stride, padding):
+    """
+    in_size is (height, width)
+    """
 
-class VanillaConv2d():
+    out_height = ((shape[-2] - (kernel_size) + 2 * padding) // stride) + 1
+    out_width = ((shape[-1] - (kernel_size) + 2 * padding) // stride) + 1
 
+    return (out_height, out_width)
+
+
+
+class VanillaConv2d(Module):
+    """
+    Version 1 of convolution layer inneficient but pedagogical using python loops and operating at scalar operations/tensor scale.
+    """
     def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1):
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -71,12 +99,14 @@ class VanillaConv2d():
         self.B = Tensor(np.zeros((1, out_channels, 1, 1)))
         
         
-    def __call__(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
+    def forward(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
         # kernel is square matrix
-        out_height = ((X.data.shape[-2] - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
-        out_width = ((X.data.shape[-1] - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
 
-        batch = X.data.shape[-4]
+        out_size = conv_out_size(X.shape, self.kernel_size, self.stride, self.padding)
+        out_height = out_size[0]
+        out_width = out_size[1]
+
+        batch = X.shape[-4]
         out_vals = [] 
 
         
@@ -112,18 +142,19 @@ class VanillaConv2d():
     def parameters(self):
         return [self.W, self.B] # python list returns W and B reference
     
-    def zero_grad(self):
-        self.W.zero_grad()
-        self.B.zero_grad()
 
     def size_map(self, in_height, in_width):
-        out_height = ((in_height - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
-        out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+        out_size = conv_out_size((in_height, in_width), self.kernel_size, self.stride, self.padding)
+        out_height = out_size[0]
+        out_width = out_size[1]
         return self.out_channels * out_height * out_width
 
 
 
-class Conv2d():
+class Conv2d(Module):
+    """
+    Version 2, constructing im2col abstraction with python, way faster.
+    """
     def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1):
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -139,12 +170,13 @@ class Conv2d():
 
         
 
-    def __call__(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
+    def forward(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
         # kernel is square matrix
-        out_height = ((X.data.shape[-2] - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
-        out_width = ((X.data.shape[-1] - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
-
-        batch = X.data.shape[-4]
+        out_size = conv_out_size(X.shape, self.kernel_size, self.stride, self.padding)
+        out_height = out_size[0]
+        out_width = out_size[1]
+        
+        batch = X.shape[-4]
         patches_list = [] # will store batch of input batch that will be stack and flatten to use im2col
         padded_X = X.pad_zeros((0, 0), (0, 0), (self.padding, self.padding), (self.padding, self.padding))
 
@@ -180,25 +212,26 @@ class Conv2d():
     def parameters(self):
         return [self.W, self.B] # python list returns W and B reference
     
-    def zero_grad(self):
-        self.W.zero_grad()
-        self.B.zero_grad()
 
     def size_map(self, in_height, in_width):
-        out_height = ((in_height - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
-        out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+        out_size = conv_out_size((in_height, in_width), self.kernel_size, self.stride, self.padding)
+        out_height = out_size[0]
+        out_width = out_size[1]
         return self.out_channels * out_height * out_width
     
     def out_height(self, in_height):
-        out_height = ((in_height - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
+        out_height = conv_out_size((in_height, in_height), self.kernel_size, self.stride, self.padding)[-2]
         return out_height
     
     def out_width(self, in_width):
-        out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+        out_width = conv_out_size((in_width, in_width), self.kernel_size, self.stride, self.padding)[-1]
         return out_width
     
 
-class OptiConv2d():
+class OptiConv2d(Module):
+    """
+    Optimized version, reducing as much as possible python overhead, using vectorized and fused operations (im2col reshape and transform notably)
+    """
     def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1, bias = True):
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -213,13 +246,13 @@ class OptiConv2d():
         self.B = Tensor(np.zeros((1, out_channels, 1, 1))) if self.bias else None
         
 
-    def __call__(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
+    def forward(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
         
-        out_height = ((X.data.shape[-2] - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
-        out_width = ((X.data.shape[-1] - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+        out_size = conv_out_size(X.shape, self.kernel_size, self.stride, self.padding)
+        out_height = out_size[0]
+        out_width = out_size[1]
 
-        batch = X.data.shape[-4]
-        patches_list = [] # will store batch of input batch that will be stack and flatten to use im2col
+        batch = X.shape[-4]
         padded_X = X.pad_zeros((0, 0), (0, 0), (self.padding, self.padding), (self.padding, self.padding))
 
         # the loop with lots of python overhead and node in the gradient graph is replace by a vectorized im2col tensor operation
@@ -238,26 +271,24 @@ class OptiConv2d():
         return out # shape (batch, out_channels, out_height, out_width)
     
     def parameters(self):
-        return [self.W, self.B]
+        return [self.W, self.B] if self.bias else [self.W]
     
-    def zero_grad(self):
-        self.W.zero_grad()
-        self.B.zero_grad()
 
     def size_map(self, in_height, in_width):
-        out_height = ((in_height - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
-        out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+        out_size = conv_out_size((in_height, in_width), self.kernel_size, self.stride, self.padding)
+        out_height = out_size[0]
+        out_width = out_size[1]
         return self.out_channels * out_height * out_width
     
     def out_height(self, in_height):
-        out_height = ((in_height - (self.kernel_size) + 2 * self.padding) // self.stride) + 1
+        out_height = conv_out_size((in_height, in_height), self.kernel_size, self.stride, self.padding)[-2]
         return out_height
     
     def out_width(self, in_width):
-        out_width = ((in_width - (self.kernel_size) + 2 * self.padding) // self.stride) + 1 
+        out_width = conv_out_size((in_width, in_width), self.kernel_size, self.stride, self.padding)[-1]
         return out_width
 
-class MaxPool2d():
+class MaxPool2d(Module):
     """
     MaxPool layer with stride == kernel_size
     The windows tile the input with no overlap, so the whole layer is a reshape
@@ -267,8 +298,8 @@ class MaxPool2d():
         self.kernel_size = kernel_size
         self.stride = kernel_size
 
-    def __call__(self, X: Tensor): # X has shape (batch, in_channels, height, width)
-        batch, in_channels, height, width = X.shape()
+    def forward(self, X: Tensor): # X has shape (batch, in_channels, height, width)
+        batch, in_channels, height, width = X.shape
         
         assert height % self.kernel_size == 0 and width % self.kernel_size == 0,\
         f"height or width is not a multiple of kernel_size"
@@ -292,17 +323,3 @@ class MaxPool2d():
         out_width = in_width // self.kernel_size
         return out_width
 
-
-if __name__ == "__main__":
-    convlayer = Conv2d()
-    x = Tensor(np.array([[[[1.0, 2.0, 3.0],
-                           [4.0, 5.0, 6.0],
-                           [7.0, 8.0, 9.0]]]]))   # float input -> float grads
-
-    out = (convlayer(x) ** 2).sum()  # reduce to a scalar so backward has a single seed
-
-    out.backward()                   # actually run backprop
-
-    print("loss:", out.data)
-    print("kernel grad:\n", convlayer.W.grad)  # non-trivial gradient matrix
-    print("input grad:\n", x.grad)

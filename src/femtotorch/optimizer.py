@@ -9,4 +9,6 @@ class VanillaSGD:
     
     def zero_grad(self):
         for p in self.parameters:
+            if p.grad is None: 
+                continue
             p.zero_grad()

@@ -67,8 +67,8 @@ def test_zero_grad_resets_gradients():
     layer.W.grad = np.ones_like(layer.W.data)
     layer.B.grad = np.ones_like(layer.B.data)
     layer.zero_grad()
-    assert np.all(layer.W.grad == 0.0)
-    assert np.all(layer.B.grad == 0.0)
+    assert np.all(layer.W.grad is None)
+    assert np.all(layer.B.grad is None)
 
 
 #------------------ #

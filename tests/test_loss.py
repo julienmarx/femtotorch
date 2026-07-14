@@ -1,7 +1,7 @@
 import numpy as np
 
 from femtotorch.tensor import Tensor
-from femtotorch.nn import softmax, crossEntropy_MNIST
+from femtotorch.loss import softmax, cross_entropy
 
 RNG = np.random.default_rng(0)
 
@@ -79,14 +79,14 @@ def test_softmax_gradient():
 
 
 
-# --- crossEntropy_MNIST ----------------------------------------------------
+# --- cross_entropy ----------------------------------------------------
 
 def test_crossentropy_value():
     probs = np.array([[0.1, 0.7, 0.2],
                       [0.6, 0.3, 0.1]])
     target = np.array([[0, 1, 0],
                        [1, 0, 0]])
-    loss = crossEntropy_MNIST(Tensor(probs), Tensor(target)).data
+    loss = cross_entropy(Tensor(probs), Tensor(target)).data
     expected = -np.log([0.7, 0.6])
     np.testing.assert_allclose(loss, expected, rtol=1e-6)
 
@@ -94,7 +94,7 @@ def test_crossentropy_value():
 def test_crossentropy_confident_prediction_is_low():
     probs = np.array([[0.998, 0.001, 0.001]])
     target = np.array([[1, 0, 0]])
-    loss = float(crossEntropy_MNIST(Tensor(probs), Tensor(target)).data[0])
+    loss = float(cross_entropy(Tensor(probs), Tensor(target)).data[0])
     assert loss < 0.01
 
 
@@ -106,7 +106,7 @@ def test_crossentropy_gradient():
     target = Tensor(onehot)
 
     def forward(t):
-        return crossEntropy_MNIST(t, target).sum()
+        return cross_entropy(t, target).sum()
 
     check_gradient(forward, x)
 

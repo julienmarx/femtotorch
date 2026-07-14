@@ -16,10 +16,10 @@ def test_construction():
 
 def test_getters():
     t = Tensor([[1., 2., 3.], [4., 5., 6.]])
-    assert t.shape() == (2, 3)
-    assert t.size() == 6
-    assert t.ndim() == 2
-    assert Tensor(7.0).shape() == ()                     # scalar
+    assert t.shape == (2, 3)
+    assert t.size == 6
+    assert t.ndim == 2
+    assert Tensor(7.0).shape == ()                     # scalar
 
 
 def test_repr():
@@ -307,14 +307,14 @@ def test_getitem_repeated_indices():
 def test_pad_zeros_forward():
     a = Tensor([[1., 2.], [3., 4.]])
     out = a.pad_zeros((1, 1), (1, 1))                          # 1 of zeros all around
-    assert out.shape() == (4, 4)
+    assert out.shape == (4, 4)
     np.testing.assert_allclose(out.data, np.pad(a.data, ((1, 1), (1, 1))))
 
 
 def test_pad_zeros_asymmetric_forward():
     a = Tensor([[1., 2., 3.]])
     out = a.pad_zeros((2, 0), (1, 3))                          # different front/back per axis
-    assert out.shape() == (3, 7)
+    assert out.shape == (3, 7)
     np.testing.assert_allclose(out.data, np.pad(a.data, ((2, 0), (1, 3))))
 
 
@@ -358,7 +358,7 @@ def test_pad_zeros_no_padding_is_identity():
 def test_reshape_forward():
     a = Tensor([[1., 2., 3.], [4., 5., 6.]])
     out = a.reshape(3, 2)
-    assert out.shape() == (3, 2)
+    assert out.shape == (3, 2)
     np.testing.assert_allclose(out.data, [[1, 2], [3, 4], [5, 6]])
     np.testing.assert_allclose(out.reshape(6).data, [1, 2, 3, 4, 5, 6])   # flatten
 
@@ -405,7 +405,7 @@ def test_reshape_of_scalar_intermediate():
 def test_swapaxes_forward():
     a = Tensor([[1., 2., 3.], [4., 5., 6.]]) # shape (2, 3)
     out = a.swapaxes(0, 1)
-    assert out.shape() == (3, 2)
+    assert out.shape == (3, 2)
     # Après swap, les colonnes deviennent des lignes
     np.testing.assert_allclose(out.data, [[1, 4], [2, 5], [3, 6]])
 
@@ -447,7 +447,7 @@ def test_stack_forward():
     a = Tensor([1., 2., 3.])
     b = Tensor([4., 5., 6.])
     out = Tensor.stack([a, b])
-    assert out.shape() == (2, 3)                          # new leading axis
+    assert out.shape == (2, 3)                          # new leading axis
     np.testing.assert_allclose(out.data, [[1, 2, 3], [4, 5, 6]])
 
 
@@ -472,7 +472,7 @@ def test_stack_grad_values():
 def test_stack_scalars():
     a, b = Tensor(2.), Tensor(5.)
     out = Tensor.stack([a, b])
-    assert out.shape() == (2,)
+    assert out.shape == (2,)
     out.sum().backward()
     np.testing.assert_allclose(a.grad, 1)
     np.testing.assert_allclose(b.grad, 1)

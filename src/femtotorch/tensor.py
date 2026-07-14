@@ -61,8 +61,8 @@ class Tensor:
             return out # without the closure below self and other are garbage collected
 
         def _backward():
-            self._accumulate_grad(unbroadcast(out.grad, self.shape()))   # accumulate contributions from each out node depending self node
-            other._accumulate_grad(unbroadcast(out.grad, other.shape()))
+            self._accumulate_grad(unbroadcast(out.grad, self.shape))   # accumulate contributions from each out node depending self node
+            other._accumulate_grad(unbroadcast(out.grad, other.shape))
 
         out._backward = _backward
         return out
@@ -77,8 +77,8 @@ class Tensor:
             return out
         
         def _backward():
-            self._accumulate_grad(unbroadcast(np.multiply(other.data,out.grad), self.shape()))
-            other._accumulate_grad(unbroadcast(np.multiply(self.data, out.grad), other.shape()))
+            self._accumulate_grad(unbroadcast(np.multiply(other.data,out.grad), self.shape))
+            other._accumulate_grad(unbroadcast(np.multiply(self.data, out.grad), other.shape))
 
         out._backward = _backward
         return out
@@ -168,7 +168,7 @@ class Tensor:
 
     def mean(self, axis=None, keepdims=False):
         s = self.sum(axis = axis, keepdims=keepdims)
-        n = self.size() if axis is None else self.shape()[axis] # if axis is None the whole tensor is collapsed into a scalar so n is .size()
+        n = self.size if axis is None else self.shape[axis] # if axis is None the whole tensor is collapsed into a scalar so n is .size
         return s * (1.0 / n)
 
     def __matmul__(self, other):
@@ -366,14 +366,15 @@ class Tensor:
 
     # getter functions
     
+    @property
     def shape(self):
         return self.data.shape
     
-    
+    @property
     def size(self):
         return self.data.size
     
-    
+    @property
     def ndim(self): # number of dimensions
         return self.data.ndim
 

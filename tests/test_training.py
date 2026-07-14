@@ -12,7 +12,7 @@ import numpy as np
 from femtotorch.tensor import Tensor
 from femtotorch.nn import MLP
 from femtotorch.optimizer import VanillaSGD
-from femtotorch.loss import softmax, crossEntropy_MNIST
+from femtotorch.loss import softmax, cross_entropy
 from femtotorch.datasets import one_hot
 
 
@@ -33,7 +33,7 @@ def train(model, X, Y, n_classes, lr=0.2, epochs=400):
     for _ in range(epochs):
         opt.zero_grad()
         probs = softmax(model(Tensor(X)))
-        loss = crossEntropy_MNIST(probs, Tensor(targets)).mean()
+        loss = cross_entropy(probs, Tensor(targets)).mean()
         loss.backward()
         opt.step()
         history.append(float(loss.data))

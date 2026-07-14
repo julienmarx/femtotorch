@@ -40,7 +40,7 @@ target = [0,0,0,0,0,0,1,0,0,0]
 model = ft.MLP(784, [10])
 gradient_updater = ft.VanillaSGD(model.parameters(), 0.3)
 soft_out = ft.softmax(model(test))
-loss = ft.crossEntropy_MNIST(soft_out, target)
+loss = ft.cross_entropy(soft_out, target)
 
 
 print(soft_out.data[0])
@@ -48,7 +48,7 @@ print(soft_out.data[0])
 for _ in range(10):
     gradient_updater.zero_grad()
     soft_out = ft.softmax(model(test))
-    loss = ft.crossEntropy_MNIST(soft_out, target)
+    loss = ft.cross_entropy(soft_out, target)
     loss.backward()
     gradient_updater.step()
 
