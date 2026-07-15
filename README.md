@@ -5,7 +5,18 @@ A coherent NumPy/CuPy deep-learning curriculum where every later model imports t
 
 ## Setup
 
-Needs python >= 3.13 and uv.
+Clone the repo ([github.com/julienmarx/femtotorch](https://github.com/julienmarx/femtotorch)):
+
+```bash
+git clone https://github.com/julienmarx/femtotorch.git
+cd femtotorch
+```
+
+Needs python >= 3.13 and [uv](https://docs.astral.sh/uv/getting-started/installation/):
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 ```bash
 uv sync              # cpu, numpy only
