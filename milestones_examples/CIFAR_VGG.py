@@ -5,10 +5,10 @@ import numpy as np
 
 class VggNet:
     """
-    75.65 %
+    first model to reach 80%
     """
     def __init__(self):
-        self.batch_size = 128 # bigger batch for less python overhead and smoother stats with batchnorm
+        self.batch_size = 64 
 
         self.conv1 = ft.OptiConv2d(in_channels=3, out_channels=32, kernel_size=3, stride =1, padding=1, bias=False) 
         self.batchnorm1 = ft.BatchNorm2d(num_features=32)
@@ -62,11 +62,12 @@ class VggNet:
 Xtrain, Ytrain, Xtest, Ytest = ft.load_cifar10("data/cifar10")
 net = VggNet()
 params_list = net.parameters()
-gradient_updater = ft.VanillaSGD(params_list, 0.1)
+gradient_updater = ft.SGD_Moment(params_list, 0.05)
+lr_scheduler = ft.CosineScheduler(gradient_updater, 30)
 batch_generator =  ft.Dataloader(Xtrain, Ytrain, batch_size=net.batch_size, shuffle=True) 
 
 # Training loop
-for epochs in range(20):
+for epochs in range(30):
 
     for i, (Xbatch, Ybatch) in enumerate(batch_generator):
 
@@ -78,11 +79,15 @@ for epochs in range(20):
         loss.backward() # update gradient
         gradient_updater.step() # update weights
         
-        if i % 30 == 0:     
-            print(f"batch: {i}")
+        if i % 50 == 0:     
+            print(f"batch: {i}, \n loss: {loss.data}")
 
         # first inference
+    # lr decay per epoch
+    lr_scheduler.step()
+    print(f"learning_rate:{gradient_updater.get_lr()}")
 
+    # test per epoch
     with ft.no_grad():
         net.set__batchnorm(training=False)
         pred = net(ft.Tensor(Xtest[:10000])).argmax(axis=-1)
