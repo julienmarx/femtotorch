@@ -370,6 +370,13 @@ class Tensor:
         for v in reversed(topo):
             v._backward()
 
+        # release the graph: break the circular references out -> _backward -> out
+        # this forbid to call twice backward() on the loss since the graph is emptied
+        for v in topo:
+            # Restoring constructor state, lambda: None and not just 'None' to be able build_topo on the second batch
+            v._backward = lambda : None # severs closure
+            v._prev.clear() # empties the set of parent references
+
     # for inference
     def argmax(self, axis=None, keepdims=False):
         out = Tensor(np.argmax(self.data, axis=axis, keepdims=keepdims), (self,))
