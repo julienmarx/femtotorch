@@ -11,6 +11,9 @@ dependencies = [
     "numpy>=2.4.6",
 ]
 
+[project.optional-dependencies]
+gpu = ["cupy-cuda12x>=13.4; sys_platform != 'darwin'"]
+
 [build-system]
 requires = ["uv_build>=0.11.19,<0.12.0"]
 build-backend = "uv_build"

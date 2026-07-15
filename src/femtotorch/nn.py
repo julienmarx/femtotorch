@@ -1,4 +1,5 @@
-import numpy as np
+from femtotorch.backend import xp as np
+
 from  femtotorch.tensor import Tensor
 from abc import ABC, abstractmethod
 

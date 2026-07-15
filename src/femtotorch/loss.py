@@ -1,4 +1,3 @@
-import numpy as np
 from  femtotorch.tensor import Tensor
 # Fused loss function will have to be implemented to avoid taking log of proba which can be if unlucky 0 so undefined log
 

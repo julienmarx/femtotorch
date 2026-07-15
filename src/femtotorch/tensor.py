@@ -1,5 +1,5 @@
-import numpy as np
-from numpy.lib.stride_tricks import sliding_window_view # useful for im2col
+from femtotorch.backend import xp as np, sliding_window_view # for im2col
+
 from contextlib import contextmanager
 
 # helper function to allow backward pass on operations with numpy broadcasting

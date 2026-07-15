@@ -91,7 +91,7 @@ for epochs in range(30):
     with ft.no_grad():
         net.set__batchnorm(training=False)
         pred = net(ft.Tensor(Xtest[:10000])).argmax(axis=-1)
-    accuracy = (pred.data[:10000] == Ytest[:10000]).mean()
+    accuracy = (ft.to_cpu(pred.data[:10000]) == Ytest[:10000]).mean()
     print(f"epoch{epochs} ,test accuracy: {accuracy}")
     net.set__batchnorm(training= True)
     

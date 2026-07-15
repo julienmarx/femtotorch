@@ -1,4 +1,4 @@
-import numpy as np 
+from femtotorch.backend import xp as np
 from abc import ABC, abstractmethod
 
 
@@ -48,7 +48,7 @@ class SGD_Moment(Optimizer):
             # to avoid memorization (big weights), we use weight decay
             # we want to minimize WL = L(p) + (λ/2)·‖p‖², dWL/dp = p.grad + λ * p.data
             g = p.grad + self.weight_decay * p.data
-            
+
             v[:] = self.momentum * v + g # [:] so the velocity list keeps seing the updated array in the same reference
             p.data -= self.lr * v
 
