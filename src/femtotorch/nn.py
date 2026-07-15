@@ -33,10 +33,10 @@ class Layer(Module):
         # which led to underflow in the loss function with exp(big_negative_number) = 0 by underflow
         # then the proba = 0 was fed into the gradient of crossentropy which has a log and log(0) = inf ;(
         std = np.sqrt(2.0/nin) if activation else np.sqrt(1/nin)
-        self.W = Tensor(rng.standard_normal((nin, nout)) * std)
+        self.W = Tensor(rng.standard_normal((nin, nout)) * std, dtype=np.float32)
         # Problematic original initialization: rng.uniform(-1.0, 1.0, size= (nin, nout)))
         
-        self.B = Tensor(np.zeros((1, nout)))
+        self.B = Tensor(np.zeros((1, nout)), dtype=np.float32)
         self.activation = activation
 
     def forward(self, X): # forward pass but with Layer(X)
@@ -95,8 +95,8 @@ class VanillaConv2d(Module):
         # assuming relu activation
         fan_in = kernel_size * kernel_size * in_channels
         std = np.sqrt(2.0/(fan_in))
-        self.W = Tensor(rng.standard_normal((out_channels, in_channels, kernel_size, kernel_size)) * std)
-        self.B = Tensor(np.zeros((1, out_channels, 1, 1)))
+        self.W = Tensor(rng.standard_normal((out_channels, in_channels, kernel_size, kernel_size)) * std, dtype=np.float32)
+        self.B = Tensor(np.zeros((1, out_channels, 1, 1)), dtype=np.float32)
         
         
     def forward(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
@@ -165,8 +165,8 @@ class Conv2d(Module):
         self.fan_in = kernel_size * kernel_size * in_channels
 
         std = np.sqrt(2.0/(self.fan_in))
-        self.W = Tensor(rng.standard_normal((self.fan_in, self.out_channels)) * std) # the weights are flatten to addapt to
-        self.B = Tensor(np.zeros((1, out_channels, 1, 1)))
+        self.W = Tensor(rng.standard_normal((self.fan_in, self.out_channels)) * std, dtype=np.float32) # the weights are flatten to addapt to
+        self.B = Tensor(np.zeros((1, out_channels, 1, 1)), dtype=np.float32)
 
         
 
@@ -242,8 +242,8 @@ class OptiConv2d(Module):
         self.fan_in = kernel_size * kernel_size * in_channels
 
         std = np.sqrt(2.0/(self.fan_in))
-        self.W = Tensor(rng.standard_normal((self.fan_in, self.out_channels)) * std) # the weights are flatten to addapt to
-        self.B = Tensor(np.zeros((1, out_channels, 1, 1))) if self.bias else None
+        self.W = Tensor(rng.standard_normal((self.fan_in, self.out_channels)) * std, dtype=np.float32) # the weights are flatten to addapt to
+        self.B = Tensor(np.zeros((1, out_channels, 1, 1)), dtype=np.float32) if self.bias else None
         
 
     def forward(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
@@ -323,3 +323,44 @@ class MaxPool2d(Module):
         out_width = in_width // self.kernel_size
         return out_width
 
+
+class BatchNorm2d(Module):
+    """
+    After a Conv2d, normalize outputs in a standard normal distribution
+    then learn to recenter and scale the distribution of the output values
+    """
+
+    def __init__(self, num_features, eps=1e-5, momentum=0.1):
+        self.eps = eps
+        self.gamma = Tensor(np.ones(shape=(1, num_features, 1, 1)), dtype = np.float32)
+        self.beta = Tensor(np.zeros(shape=(1, num_features, 1, 1)), dtype = np.float32)
+        self.running_mean = np.zeros(shape=(1, num_features, 1, 1), dtype= np.float32)
+        self.running_var = np.ones(shape=(1, num_features, 1, 1), dtype=np.float32)
+        self.momentum = momentum
+        self.training = True
+
+    def set_training(self, training = True):
+        self.training = training
+
+    def forward(self, X: Tensor): # X.shape is (batch, in_channel, height, width)
+        
+
+        if self.training:
+
+            mu = X.mean(axis=(0, 2, 3), keepdims = True) # per in_channel mean
+            var = ((X - mu)**2).mean(axis=(0, 2, 3), keepdims = True)
+
+            #running var and mu are numpy arrays to avoid unnecessary graph construction
+            self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mu.data
+            self.running_var = (1 - self.momentum) * self.running_var + self.momentum * var.data
+            z_score = (X - mu) / ((var + self.eps) ** 0.5)
+            
+        else:
+            z_score = (X - self.running_mean) / ((self.running_var + self.eps) ** 0.5)
+
+        out = z_score * self.gamma + self.beta 
+
+        return out
+    
+    def parameters(self):
+        return [self.gamma, self.beta]
