@@ -8,7 +8,7 @@ class VggNet:
     75.65 %
     """
     def __init__(self):
-        self.batch_size = 64
+        self.batch_size = 128 # bigger batch for less python overhead and smoother stats with batchnorm
 
         self.conv1 = ft.OptiConv2d(in_channels=3, out_channels=32, kernel_size=3, stride =1, padding=1, bias=False) 
         self.batchnorm1 = ft.BatchNorm2d(num_features=32)
