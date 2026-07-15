@@ -5,7 +5,7 @@ import numpy as np
 
 class VggNet:
     """
-    % ?
+    75.65 %
     """
     def __init__(self):
         self.batch_size = 64
@@ -62,7 +62,7 @@ class VggNet:
 Xtrain, Ytrain, Xtest, Ytest = ft.load_cifar10("data/cifar10")
 net = VggNet()
 params_list = net.parameters()
-gradient_updater = ft.VanillaSGD(params_list, 0.05)
+gradient_updater = ft.VanillaSGD(params_list, 0.1)
 batch_generator =  ft.Dataloader(Xtrain, Ytrain, batch_size=net.batch_size, shuffle=True) 
 
 # Training loop
@@ -88,6 +88,7 @@ for epochs in range(20):
         pred = net(ft.Tensor(Xtest[:10000])).argmax(axis=-1)
     accuracy = (pred.data[:10000] == Ytest[:10000]).mean()
     print(f"epoch{epochs} ,test accuracy: {accuracy}")
+    net.set__batchnorm(training= True)
     
 
 
