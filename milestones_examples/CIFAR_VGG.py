@@ -70,11 +70,12 @@ batch_generator =  ft.Dataloader(Xtrain, Ytrain, batch_size=net.batch_size, shuf
 # Training loop
 for epochs in range(30):
 
-    ft.synchronize()
-    t0 = time.perf_counter()
+    t1 = time.perf_counter()
 
     for i, (Xbatch, Ybatch) in enumerate(batch_generator):
-
+        
+        ft.synchronize()
+        t0 = time.perf_counter()
 
         gradient_updater.zero_grad() # reset previous gradients
 
@@ -93,7 +94,7 @@ for epochs in range(30):
     # lr decay per epoch
     lr_scheduler.step()
     print(f"learning_rate:{gradient_updater.get_lr()}")
-
+    print(f"batch time: {time.perf_counter() - t1:.2f} s")
     # test per epoch
     with ft.no_grad():
         net.set__batchnorm(training=False)
