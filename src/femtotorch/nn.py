@@ -332,10 +332,12 @@ class BatchNorm2d(Module):
 
     def __init__(self, num_features, eps=1e-5, momentum=0.1):
         self.eps = eps
+        # the 4 Tensors/arrays below will be broadcasted
         self.gamma = Tensor(np.ones(shape=(1, num_features, 1, 1)), dtype = np.float32)
         self.beta = Tensor(np.zeros(shape=(1, num_features, 1, 1)), dtype = np.float32)
         self.running_mean = np.zeros(shape=(1, num_features, 1, 1), dtype= np.float32)
         self.running_var = np.ones(shape=(1, num_features, 1, 1), dtype=np.float32)
+
         self.momentum = momentum
         self.training = True
 
