@@ -19,6 +19,8 @@ else:
     from numpy.lib.stride_tricks import sliding_window_view
     GPU = False
 
+print(f"[femtotorch] backend: {'cupy (GPU)' if GPU else 'numpy (CPU)'}")
+
 
 def to_cpu(a):
     """
