@@ -183,11 +183,6 @@ class Tensor:
         return s * 1 / n
 
 
-
-
-        n = self.size if axis is None else self.shape[axis] # if axis is None the whole tensor is collapsed into a scalar so n is .size
-        return s * (1.0 / n)
-
     def __matmul__(self, other):
         if not isinstance(other, Tensor):
             other = Tensor(other)
