@@ -1,14 +1,15 @@
 
 import femtotorch as ft
 import numpy as np
+import time
 
-
+# while training in a terminal : nvidia-smi 
 class VggNet:
     """
     first model to reach 80%
     """
     def __init__(self):
-        self.batch_size = 64 
+        self.batch_size = 256
 
         self.conv1 = ft.OptiConv2d(in_channels=3, out_channels=32, kernel_size=3, stride =1, padding=1, bias=False) 
         self.batchnorm1 = ft.BatchNorm2d(num_features=32)
@@ -69,6 +70,9 @@ batch_generator =  ft.Dataloader(Xtrain, Ytrain, batch_size=net.batch_size, shuf
 # Training loop
 for epochs in range(30):
 
+    ft.synchronize()
+    t0 = time.perf_counter()
+
     for i, (Xbatch, Ybatch) in enumerate(batch_generator):
 
 
@@ -79,8 +83,11 @@ for epochs in range(30):
         loss.backward() # update gradient
         gradient_updater.step() # update weights
         
-        if i % 50 == 0:     
+        if i % 30 == 0:     
             print(f"batch: {i}, \n loss: {loss.data}")
+
+            ft.synchronize()
+            print(f"batch time: {time.perf_counter() - t0:.2f} s")
 
         # first inference
     # lr decay per epoch
@@ -90,11 +97,13 @@ for epochs in range(30):
     # test per epoch
     with ft.no_grad():
         net.set__batchnorm(training=False)
-        pred = net(ft.Tensor(Xtest[:10000])).argmax(axis=-1)
-    accuracy = (ft.to_cpu(pred.data[:10000]) == Ytest[:10000]).mean()
+        correct = 0
+        for start in range(0, 10000, 500):
+            pred = net(ft.Tensor(Xtest[start:start+500])).argmax(axis=-1)
+            correct += (ft.to_cpu(pred.data) == Ytest[start:start+500]).sum()
+    accuracy = correct / 10000
     print(f"epoch{epochs} ,test accuracy: {accuracy}")
     net.set__batchnorm(training= True)
-    
 
 
 
