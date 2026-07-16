@@ -4,7 +4,7 @@ import numpy as np
 import time
 
 # while training in a terminal : nvidia-smi 
-class VGG:
+class VGG_BN:
     """
     first model to reach 80%
     """
@@ -85,7 +85,7 @@ class VGG:
 
 # Initialization
 Xtrain, Ytrain, Xtest, Ytest = ft.load_cifar10("data/cifar10")
-net = VGG()
+net = VGG_BN()
 params_list = net.parameters()
 gradient_updater = ft.SGD_Moment(params_list, 0.05)
 lr_scheduler = ft.CosineScheduler(gradient_updater, 30)
