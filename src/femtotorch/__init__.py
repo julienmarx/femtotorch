@@ -7,4 +7,4 @@ from femtotorch.loss import cross_entropy, softmax, softmax_cross_entropy
 from femtotorch.datasets import load_mnist, load_cifar10, one_hot
 from femtotorch.dataloader import Dataloader
 from femtotorch.weights import load, save
-from femtotorch.backend import to_cpu, synchronize
+from femtotorch.backend import to_cpu, synchronize, memory_stats

@@ -9,7 +9,7 @@ class VGG_BN:
     first model to reach 80%
     """
     def __init__(self):
-        self.batch_size = 64
+        self.batch_size = 32
 
         self.conv1 = ft.OptiConv2d(in_channels=3, out_channels=64, kernel_size=3, stride =1, padding=1, bias=False) 
         self.batchnorm1 = ft.BatchNorm2d(num_features=64)
@@ -108,11 +108,19 @@ for epochs in range(30):
         loss.backward() # update gradient
         gradient_updater.step() # update weights
         
-        if i % 30 == 0:     
+        if i % 100 == 0:     
             print(f"batch: {i}, \n loss: {loss.data}")
 
             ft.synchronize()
             print(f"batch time: {time.perf_counter() - t0} s")
+
+
+
+            # memory consumption on gpu
+            stats = ft.memory_stats()
+            if stats is not None:
+                print(f"pool {stats['pool_used']/1e6:.0f} / {stats['pool_total']/1e6:.0f} MB, "
+                    f"device free {stats['dev_free']/1e6:.0f} MB, \n")
 
         # first inference
     # lr decay per epoch

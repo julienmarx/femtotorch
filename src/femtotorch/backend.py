@@ -43,3 +43,17 @@ def synchronize():
     if GPU:
         xp.cuda.Device().synchronize()
 
+
+def memory_stats():
+    """Returns a dict of memory numbers, or None on CPU."""
+    if not GPU:
+        return None
+    pool = xp.get_default_memory_pool()
+    free, total = xp.cuda.runtime.memGetInfo()   # bytes, whole device
+    return {
+        "pool_used":  pool.used_bytes(),    # bytes in live arrays right now
+        "pool_total": pool.total_bytes(),   # bytes the pool holds (high-water mark)
+        "dev_free":   free,                 # what the driver says is left on the card
+        "dev_total":  total,
+    }
+
