@@ -351,12 +351,13 @@ class BatchNorm2d(Module):
         if self.training:
 
             mu = X.mean(axis=(0, 2, 3), keepdims = True) # per in_channel mean
-            var = ((X - mu)**2).mean(axis=(0, 2, 3), keepdims = True)
+            centered_X = X - mu
+            var = ((centered_X)**2).mean(axis=(0, 2, 3), keepdims = True)
 
             #running var and mu are numpy arrays to avoid unnecessary graph construction
             self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mu.data
             self.running_var = (1 - self.momentum) * self.running_var + self.momentum * var.data
-            z_score = (X - mu) / ((var + self.eps) ** 0.5)
+            z_score = (centered_X) / ((var + self.eps) ** 0.5)
             
         else:
             z_score = (X - self.running_mean) / ((self.running_var + self.eps) ** 0.5)
