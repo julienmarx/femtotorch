@@ -403,12 +403,22 @@ class Tensor:
         for v in reversed(topo):
             v._backward()
 
-        # release the graph: break the circular references out -> _backward -> out
-        # this forbid to call twice backward() on the loss since the graph is emptied
-        for v in topo:
+            # reversed(topo) runs consumers before their inputs (nodes in the _prev of consumers),
+            #  so by the time v._backward() has run, v.grad has received every contribution and nothing will read it again
+
+
+
+            # release the graph: break the circular references out -> _backward -> out
+            # this makes a second call loss.backward() a no-op since the graph does not exist anymore
+
+            if v._prev: # if v._prev is non-empty, in other words v is an intermediat node (not a leaf)
+                v.grad = None
+            
             # Restoring constructor state, lambda: None and not just 'None' to be able build_topo on the second batch
             v._backward = lambda : None # severs closure
             v._prev.clear() # empties the set of parent references
+
+            
 
     # for inference
     def argmax(self, axis=None, keepdims=False):
