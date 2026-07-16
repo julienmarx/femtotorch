@@ -17,3 +17,5 @@ def cross_entropy(x: Tensor, target):
     out_scalar = out.max(axis = -1) # flatten every vector to a scalar which is the proba of the correct digit
     return -(out_scalar.log())
 
+def softmax_cross_entropy(x: Tensor, target):
+    return x.softmax_cross_entropy(target)

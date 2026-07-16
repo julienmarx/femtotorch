@@ -324,6 +324,39 @@ class Tensor:
 
         return out # shape (batch * out_width * out_height, fan_in)
     
+    def softmax_cross_entropy(self, target: "Tensor"):
+        """
+        Fused sofmax and cross entropy to prevent division by 0 in the backward because of underflow
+        """
+        # target: (batch_size,) int indices
+        target = np.asarray(target.data, dtype = int)
+        rows = np.arange(len(target)) # [0, 1, ..., batch_size-1]
+
+        max = self.data.max(axis=-1, keepdims = True) # (batch_size,1)
+        e = np.exp(self.data - max)  # (batch_size, num_classes)
+
+        sum_e = e.sum(axis = -1, keepdims=True)   # (batch_size,1)
+
+        out = Tensor(np.log(sum_e[:, 0]) + max[:, 0] - self.data[rows, target], (self,))
+        
+
+        if not Tensor.grad_mode:
+            return out
+        
+        def _backward():
+            grad = e / sum_e
+            grad[rows, target] -= 1.0
+            self._accumulate_grad(grad * out.grad[:, None])
+
+        out._backward = _backward
+                     
+        return out
+
+
+
+    
+
+
 
     def __neg__(self):
         return self * -1

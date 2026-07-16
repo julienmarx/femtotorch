@@ -3,7 +3,7 @@ from femtotorch.nn import MLP, Layer, VanillaConv2d, Conv2d, OptiConv2d, MaxPool
     BatchNorm2d
 
 from femtotorch.optimizer import VanillaSGD, SGD_Moment, CosineScheduler
-from femtotorch.loss import cross_entropy, softmax
+from femtotorch.loss import cross_entropy, softmax, softmax_cross_entropy
 from femtotorch.datasets import load_mnist, load_cifar10, one_hot
 from femtotorch.dataloader import Dataloader
 from femtotorch.weights import load, save

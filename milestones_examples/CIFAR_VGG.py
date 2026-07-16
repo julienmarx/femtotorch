@@ -57,9 +57,9 @@ class VGG:
 
         x = x.reshape(-1, self.out_pool3)
 
-        soft_out = ft.softmax(self.model(x))
+        logits = self.model(x)
 
-        return soft_out
+        return logits
     
     def set__batchnorm(self, training = True):
         self.batchnorm1.set_training(training)
@@ -103,8 +103,8 @@ for epochs in range(30):
 
         gradient_updater.zero_grad() # reset previous gradients
 
-        soft_out = net(Xbatch)
-        loss = ft.cross_entropy(soft_out, ft.one_hot(Ybatch)).mean() # loss function take mean of the loss of all vectors in the batch
+        raw_logits = net(Xbatch)
+        loss = ft.softmax_cross_entropy(raw_logits, Ybatch).mean()
         loss.backward() # update gradient
         gradient_updater.step() # update weights
         
