@@ -8,3 +8,4 @@ from femtotorch.datasets import load_mnist, load_cifar10, one_hot
 from femtotorch.dataloader import Dataloader
 from femtotorch.weights import load, save
 from femtotorch.backend import to_cpu, synchronize, memory_stats
+from femtotorch.profiler import Profiler

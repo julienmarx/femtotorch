@@ -92,7 +92,7 @@ lr_scheduler = ft.CosineScheduler(gradient_updater, 30)
 batch_generator =  ft.Dataloader(Xtrain, Ytrain, batch_size=BATCH_SIZE, shuffle=True) 
 
 # Training loop
-for epochs in range(30):
+for epochs in range(1):
 
     t1 = time.perf_counter()
 
@@ -108,12 +108,8 @@ for epochs in range(30):
         loss.backward() # update gradient
         gradient_updater.step() # update weights
         
-        if i % 100 == 0:     
+        if i % 30 == 0:     
             print(f"batch: {i}, \n loss: {loss.data}")
-
-            ft.synchronize()
-            print(f"batch time: {time.perf_counter() - t0} s")
-
 
 
             # memory consumption on gpu
@@ -121,26 +117,32 @@ for epochs in range(30):
             if stats is not None:
                 print(f"pool {stats['pool_used']/1e6:.0f} / {stats['pool_total']/1e6:.0f} MB, "
                     f"device free {stats['dev_free']/1e6:.0f} MB, \n")
+            break
 
         # first inference
     # lr decay per epoch
     lr_scheduler.step()
     print(f"learning_rate:{gradient_updater.get_lr()}")
 
-    # time
-    print(f"epoch time: {time.perf_counter() - t1:.2f} s")
 
     # test per epoch
     with ft.no_grad():
         net.set__batchnorm(training=False)
+        median_latency, mean_latency = ft.Profiler.measure_latency(net, ft.Tensor(Xtest[0:BATCH_SIZE]))
+        print(f"median_latency {median_latency}, mean latency {mean_latency}")
+
         correct = 0
+
+    """
         for start in range(0, 10000, 500):
             pred = net(ft.Tensor(Xtest[start:start+500])).argmax(axis=-1)
             correct += (ft.to_cpu(pred.data) == Ytest[start:start+500]).sum()
-    accuracy = correct / 10000
+            
+
+    accuracy = correct / 1000
     print(f"epoch{epochs} ,test accuracy: {accuracy}")
     net.set__batchnorm(training= True)
-
+    """
 
 
 
