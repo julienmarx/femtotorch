@@ -49,5 +49,7 @@ with example MNIST and Fashion Mnist
 Chapter 2: Convolution network
 with example vision on CIFAR 10
 
+
+Available soon s:
 Chapter 3: Attention
  with example miniGPT with Tiny Shakespeare
