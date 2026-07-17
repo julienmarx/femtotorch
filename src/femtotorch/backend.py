@@ -28,12 +28,6 @@ def to_cpu(a):
     # eval in CIFAR_VGG.py — Ytest is numpy, pred.data may be cupy
     accuracy = (to_cpu(pred.data) == Ytest[:10000]).mean()
 
-    # weights.py save — np.savez can't accept cupy arrays
-    array_dict = {f"p{i}": to_cpu(arr.data) for i, arr in enumerate(parameters_list)}
-
-    # tests — np.testing.assert_allclose can't accept cupy arrays either
-    np.testing.assert_allclose(to_cpu(t.data), expected)
-
     """
     # cupy.asnumpy exists; numpy has no equivalent, hence the guard
     return xp.asnumpy(a) if GPU else a
