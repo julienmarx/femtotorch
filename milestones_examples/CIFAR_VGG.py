@@ -3,13 +3,13 @@ import femtotorch as ft
 import numpy as np
 import time
 
-# while training in a terminal : nvidia-smi 
-class VGG_BN:
+
+BATCH_SIZE = 32
+class VGG_BN(ft.Module):
     """
-    first model to reach 80%
+    Reliably reach 80 to 81 %
     """
     def __init__(self):
-        self.batch_size = 32
 
         self.conv1 = ft.OptiConv2d(in_channels=3, out_channels=64, kernel_size=3, stride =1, padding=1, bias=False) 
         self.batchnorm1 = ft.BatchNorm2d(num_features=64)
@@ -35,7 +35,7 @@ class VGG_BN:
         self.out_pool3 = (self.out_conv3 // 4)                
         self.model = ft.MLP(self.out_pool3, [512, 10]) 
 
-    def __call__(self, X):
+    def forward(self, X):
 
         x = self.conv1(X.reshape(-1, 3, 32, 32)) # the -1 allows flexibility on the last batch 
         x = self.batchnorm1(x).relu()
@@ -89,7 +89,7 @@ net = VGG_BN()
 params_list = net.parameters()
 gradient_updater = ft.SGD_Moment(params_list, 0.05)
 lr_scheduler = ft.CosineScheduler(gradient_updater, 30)
-batch_generator =  ft.Dataloader(Xtrain, Ytrain, batch_size=net.batch_size, shuffle=True) 
+batch_generator =  ft.Dataloader(Xtrain, Ytrain, batch_size=BATCH_SIZE, shuffle=True) 
 
 # Training loop
 for epochs in range(30):

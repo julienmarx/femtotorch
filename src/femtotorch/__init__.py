@@ -1,5 +1,5 @@
 from femtotorch.tensor import Tensor, no_grad
-from femtotorch.nn import MLP, Layer, VanillaConv2d, Conv2d, OptiConv2d, MaxPool2d, \
+from femtotorch.nn import Module, MLP, Layer, VanillaConv2d, Conv2d, OptiConv2d, MaxPool2d, \
     BatchNorm2d
 
 from femtotorch.optimizer import VanillaSGD, SGD_Moment, CosineScheduler
