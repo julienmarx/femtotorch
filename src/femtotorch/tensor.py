@@ -337,7 +337,7 @@ class Tensor:
 
         sum_e = e.sum(axis = -1, keepdims=True)   # (batch_size,1)
 
-        out = Tensor(np.log(sum_e[:, 0]) + max[:, 0] - self.data[rows, target], (self,))
+        out = Tensor(np.log(sum_e).squeeze(-1) + max.squeeze(-1) - self.data[rows, target], (self,)) 
         
 
         if not Tensor.grad_mode:
@@ -346,7 +346,7 @@ class Tensor:
         def _backward():
             grad = e / sum_e
             grad[rows, target] -= 1.0
-            self._accumulate_grad(grad * out.grad[:, None])
+            self._accumulate_grad(grad * out.grad[:,np.newaxis])
 
         out._backward = _backward
                      
