@@ -2,7 +2,7 @@
 import pytest
 import numpy as np
 
-from femtotorch.tensor import Tensor, unbroadcast
+from femtotorch.tensor import Tensor, unbroadcast, no_grad
 
 #-------------------------------#
 # Construction & getters
@@ -11,7 +11,7 @@ def test_construction():
     t = Tensor([1, 2, 3])
     assert t.data.dtype == np.float32
     np.testing.assert_array_equal(t.data, [1, 2, 3])
-    np.testing.assert_array_equal(t.grad, None)     # grad starts at zero
+    np.testing.assert_array_equal(t.grad, None)     # lazy initialization grad
 
 
 def test_getters():
@@ -446,6 +446,67 @@ def test_swapaxes_twice_is_identity():
 
 
 #-------------------------------#
+# im2col
+
+def im2col_reference(x, k, stride):
+    """Naive nested-loop im2col, used only as ground truth for the vectorized version."""
+    batch, in_c, h, w = x.shape
+    out_h = (h - k) // stride + 1
+    out_w = (w - k) // stride + 1
+    rows = []
+    for b in range(batch):
+        for i in range(out_h):
+            for j in range(out_w):
+                patch = x[b, :, i * stride:i * stride + k, j * stride:j * stride + k]  # (in_c, k, k)
+                rows.append(patch.reshape(-1))
+    return np.array(rows)
+
+
+def test_im2col_forward_hand():
+    # 3x3 single-channel image, 2x2 window, stride 1 -> four overlapping patches
+    x = Tensor([[[[1., 2., 3.],
+                  [4., 5., 6.],
+                  [7., 8., 9.]]]])                    # shape (1, 1, 3, 3)
+    cols = x.im2col(2, 1)
+    assert cols.shape == (4, 4)                        # (batch*out_h*out_w, in_c*k*k)
+    np.testing.assert_allclose(cols.data, [[1, 2, 4, 5],
+                                           [2, 3, 5, 6],
+                                           [4, 5, 7, 8],
+                                           [5, 6, 8, 9]])
+
+
+@pytest.mark.parametrize("shape, k, stride", [
+    ((1, 1, 4, 4), 2, 1),      # overlapping windows
+    ((1, 1, 4, 4), 2, 2),      # non-overlapping (stride == kernel)
+    ((2, 3, 5, 5), 3, 1),      # batched, multi-channel
+    ((1, 2, 5, 5), 2, 2),      # multi-channel, stride 2
+])
+def test_im2col_forward_matches_reference(rng, shape, k, stride):
+    x = rng.standard_normal(shape)
+    np.testing.assert_allclose(Tensor(x).im2col(k, stride).data, im2col_reference(x, k, stride))
+
+
+def test_im2col_prev_is_the_real_parent():
+    x = Tensor(np.zeros((1, 1, 3, 3)))
+    assert x.im2col(2, 1)._prev == {x}
+
+
+def test_im2col_grad():
+    rng = np.random.default_rng(0)
+    grad_check(lambda x: (x.im2col(2, 1) ** 2).sum(), rng.standard_normal((1, 1, 4, 4)))   # overlap -> scatter accumulates
+    grad_check(lambda x: (x.im2col(2, 2) ** 2).sum(), rng.standard_normal((1, 2, 4, 4)))   # stride>1, multi-channel
+
+
+def test_im2col_grad_non_overlapping_is_2x():
+    # stride == kernel: windows tile the image, every pixel lands in exactly one column,
+    # so f = sum(cols^2) has gradient 2*x routed straight back to the original positions
+    x = Tensor(np.arange(16, dtype=np.float64).reshape(1, 1, 4, 4))
+    (x.im2col(2, 2) ** 2).sum().backward()
+    assert x.grad.shape == (1, 1, 4, 4)
+    np.testing.assert_allclose(x.grad, 2 * x.data)
+
+
+#-------------------------------#
 # Stack
 
 def test_stack_forward():
@@ -572,6 +633,96 @@ def test_mean_over_axis():
     a = Tensor([[1., 2.], [3., 4.]])
     np.testing.assert_allclose(a.mean(axis=0).data, [2, 3])
     np.testing.assert_allclose(a.mean(axis=1).data, [1.5, 3.5])  # worth adding the other axis too
+
+
+#-------------------------------#
+# Fused softmax + cross-entropy
+
+def softmax_cross_entropy_reference(logits, target):
+    """Independent CE reference: form softmax explicitly, then -log of the target-class prob."""
+    e = np.exp(logits - logits.max(axis=-1, keepdims=True))
+    probs = e / e.sum(axis=-1, keepdims=True)
+    rows = np.arange(len(target))
+    return -np.log(probs[rows, np.asarray(target)])
+
+
+def test_softmax_cross_entropy_forward():
+    logits = np.array([[2., 1., 0.1],
+                       [0.5, 2.5, 0.3]])
+    out = Tensor(logits).softmax_cross_entropy(Tensor([0, 1]))
+    assert out.shape == (2,)                            # one loss per row, not a scalar
+    np.testing.assert_allclose(out.data, softmax_cross_entropy_reference(logits, [0, 1]), rtol=1e-5)
+
+
+def test_softmax_cross_entropy_is_numerically_stable():
+    # the fusion exists to survive huge logits: subtracting the row max keeps exp() from overflowing.
+    # a hugely-confident correct class -> loss ~ 0; the same logit as a wrong class -> large loss
+    logits = np.array([[100., 0., 0.]])
+    assert Tensor(logits).softmax_cross_entropy(Tensor([0])).data[0] < 1e-3
+    assert Tensor(logits).softmax_cross_entropy(Tensor([1])).data[0] > 50
+
+
+def test_softmax_cross_entropy_prev_is_the_logits():
+    # only the logits are a differentiable parent; the integer targets are not
+    logits = Tensor([[1., 2., 3.]])
+    assert logits.softmax_cross_entropy(Tensor([0]))._prev == {logits}
+
+
+def test_softmax_cross_entropy_grad():
+    rng = np.random.default_rng(0)
+    target = Tensor([0, 2, 1])                          # captured fixed: gradcheck only perturbs the logits
+    grad_check(lambda logits: logits.softmax_cross_entropy(target).sum(), rng.standard_normal((3, 4)))
+
+
+def test_softmax_cross_entropy_grad_values():
+    # uniform logits -> softmax is 1/C everywhere; grad = softmax - onehot(target)
+    logits = Tensor([[0., 0., 0., 0.]])
+    logits.softmax_cross_entropy(Tensor([2])).sum().backward()
+    np.testing.assert_allclose(logits.grad, [[0.25, 0.25, -0.75, 0.25]])
+
+
+#-------------------------------#
+# no_grad / grad_mode (inference path)
+
+def test_no_grad_sets_and_restores_flag():
+    assert Tensor.grad_mode is True
+    with no_grad():
+        assert Tensor.grad_mode is False
+    assert Tensor.grad_mode is True
+
+
+def test_no_grad_restores_flag_on_exception():
+    # the try/finally must restore grad_mode even if the block raises
+    with pytest.raises(ValueError):
+        with no_grad():
+            raise ValueError("boom")
+    assert Tensor.grad_mode is True
+
+
+def test_no_grad_builds_no_graph():
+    a = Tensor([1., 2., 3.])
+    b = Tensor([4., 5., 6.])
+    with no_grad():
+        out = a * b + a
+    np.testing.assert_allclose(out.data, a.data * b.data + a.data)   # forward value still correct
+    assert out._prev == set()                                        # ...but no parents recorded
+    assert out._backward() is None                                   # and _backward is the default no-op
+
+
+def test_no_grad_constructor_drops_prev():
+    # even a Tensor built with explicit parents records none while grad is off
+    a = Tensor([1., 2.])
+    with no_grad():
+        out = Tensor([3., 4.], _prev=(a,))
+    assert out._prev == set()
+
+
+def test_no_grad_blocks_gradient_flow():
+    a = Tensor([1., 2., 3.])
+    with no_grad():
+        out = (a * 2).sum()
+    out.backward()
+    assert a.grad is None                               # gradient never reached the input
 
 
 # --------------------------------------------------------------------------- #
