@@ -1,9 +1,8 @@
 
 import pytest
 import numpy as np
-
-from femtotorch.tensor import Tensor, unbroadcast, no_grad
-
+from femtotorch.TensorV2 import Tensor, no_grad
+from femtotorch.engine import unbroadcast, broadcast_back
 #-------------------------------#
 # Construction & getters
 
