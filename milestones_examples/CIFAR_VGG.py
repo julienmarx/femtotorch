@@ -4,7 +4,7 @@ import numpy as np
 import time
 
 
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 class VGG_BN(ft.Module):
     """
     Reliably reach 80 to 81 %
@@ -117,7 +117,7 @@ for epochs in range(1):
             if stats is not None:
                 print(f"pool {stats['pool_used']/1e6:.0f} / {stats['pool_total']/1e6:.0f} MB, "
                     f"device free {stats['dev_free']/1e6:.0f} MB, \n")
-            break
+            
 
         # first inference
     # lr decay per epoch
@@ -128,7 +128,8 @@ for epochs in range(1):
     # test per epoch
     with ft.no_grad():
         net.set__batchnorm(training=False)
-        median_latency, mean_latency = ft.Profiler.measure_latency(net, ft.Tensor(Xtest[0:BATCH_SIZE]))
+        profiler = ft.Profiler()
+        median_latency, mean_latency = profiler.measure_latency(net, ft.Tensor(Xtest[0:BATCH_SIZE]))
         print(f"median_latency {median_latency}, mean latency {mean_latency}")
 
         correct = 0

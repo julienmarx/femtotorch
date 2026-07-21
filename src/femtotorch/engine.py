@@ -10,9 +10,13 @@ class Node:
     def __init__(self, function, inputs):
         self.function = function # the operation that generated the data of of the consumer
         self.inputs = inputs     # the inputs to which the gradient will be backpassed
-        self.saved = ()          # raw arrays or values stashed for backward; never Tensors (to avoid storing unnecessary informations)
 
-    def save(self, *values, **parameters):
+        # raw arrays or values stashed for backward; never Tensors (to avoid storing unnecessary informations)
+        # these raw arrays/ values never have outgoing references to Node or Tensors,
+        # so there can't be circular reference by design
+        self.saved = () 
+
+    def save(self, *values):
         self.saved = values # tuple of values
 
 
@@ -46,7 +50,7 @@ def broadcast_back(grad, shape, axis, keepdims):
     broadcast_back is unbroadcast, reversed
     """
     if axis is not None and not keepdims:
-        grad = xp.expand_dims(grad, axis) # reinsert the collapsed slot(s) first
+        grad = xp.expand_dims(grad, axis) # reinsert the collapsed slots first
     return xp.broadcast_to(grad, shape)
 
 # Construction of the computation graph and gradient descent
@@ -61,7 +65,7 @@ def graph_backward(root_graph):
         if id(v) not in visited:
             visited.add(id(v))
 
-            if v.grad_node is not None: # if v.grad_none is None it's a leaf Node
+            if v.grad_node is not None: # if v.grad_node is None it's a leaf Node
 
                 for child in v.grad_node.inputs:
                     build_topo(child)
@@ -75,7 +79,7 @@ def graph_backward(root_graph):
     # backpropagation
     for v in reversed(topo): # consumers of t before t, so t.grad is conmplete once visited
 
-        if v.grad_node is not None: # if v.grad_none is None it's a leaf Node so there's no backpass to do 
+        if v.grad_node is not None: # if v.grad_node is None it's a leaf Node so there's no backpass to do 
             grad_node = v.grad_node # saved infos about the relations with and between the input nodes
             grads = grad_node.function.backward(grad_node, v.grad) # compute the gradient that is going to be backpassed
             

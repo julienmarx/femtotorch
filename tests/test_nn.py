@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from femtotorch.nn import Layer, MLP
-from femtotorch.tensor import Tensor
+from femtotorch.engine_switch import Tensor
 
 # Seeded rng for reproducible *inputs* (the layers' own weights stay random)
 rng = np.random.default_rng(0)

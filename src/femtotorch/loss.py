@@ -1,4 +1,4 @@
-from  femtotorch.tensor import Tensor
+from femtotorch.engine_switch import Tensor, no_grad
 # Fused loss function will have to be implemented to avoid taking log of proba which can be if unlucky 0 so undefined log
 
 

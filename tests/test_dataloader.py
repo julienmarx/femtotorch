@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from femtotorch.tensor import Tensor
+from femtotorch.engine_switch import Tensor
 from femtotorch.dataloader import Dataloader
 
 

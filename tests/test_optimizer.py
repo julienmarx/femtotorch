@@ -1,7 +1,7 @@
 import numpy as np
 from unittest.mock import Mock
 
-from femtotorch.tensor import Tensor
+from femtotorch.engine_switch import Tensor
 from femtotorch.optimizer import VanillaSGD
 
 

@@ -1,6 +1,6 @@
 import numpy as np
 
-from femtotorch.tensor import Tensor
+from femtotorch.engine_switch import Tensor
 from femtotorch.loss import softmax, cross_entropy
 
 RNG = np.random.default_rng(0)
