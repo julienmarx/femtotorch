@@ -18,4 +18,7 @@ def cross_entropy(x: Tensor, target):
     return -(out_scalar.log())
 
 def softmax_cross_entropy(x: Tensor, target):
+    """
+    Created because of numerical unstability which started with vgg_batchnorm with 3 conv layers (starts to have quite a few layers)
+    """
     return x.softmax_cross_entropy(target)

@@ -110,7 +110,7 @@ for epochs in range(1):
         
         if i % 30 == 0:     
             print(f"batch: {i}, \n loss: {loss.data}")
-
+            break
 
             # memory consumption on gpu
             stats = ft.memory_stats()
@@ -123,18 +123,15 @@ for epochs in range(1):
     # lr decay per epoch
     lr_scheduler.step()
     print(f"learning_rate:{gradient_updater.get_lr()}")
+    profiler = ft.Profiler()
+    profiler.profile_model(net, Xbatch, Ybatch)   # X: one input batch, y: the class indices
 
 
     # test per epoch
     with ft.no_grad():
         net.set__batchnorm(training=False)
-        profiler = ft.Profiler()
-        median_latency, mean_latency = profiler.measure_latency(net, ft.Tensor(Xtest[0:BATCH_SIZE]))
-        print(f"median_latency {median_latency}, mean latency {mean_latency}")
 
         correct = 0
-
-    """
         for start in range(0, 10000, 500):
             pred = net(ft.Tensor(Xtest[start:start+500])).argmax(axis=-1)
             correct += (ft.to_cpu(pred.data) == Ytest[start:start+500]).sum()
@@ -143,7 +140,7 @@ for epochs in range(1):
     accuracy = correct / 1000
     print(f"epoch{epochs} ,test accuracy: {accuracy}")
     net.set__batchnorm(training= True)
-    """
+
 
 
 

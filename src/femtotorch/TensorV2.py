@@ -24,7 +24,7 @@ class no_grad():
         Tensor.grad_mode = self.prev
 
 
-def _forward(function: ops.Function, *inputs, **params):
+def _forward(function: ops.Function, *inputs, **params): # ops.Function is an instance of Type
         """
         Creates a new 'out' Tensor result of the function's inputs Tensors,
         while saving in a Node the function and inputs' infos for backward
