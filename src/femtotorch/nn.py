@@ -1,6 +1,6 @@
 from femtotorch.backend import xp as np
 
-from femtotorch.engine_switch import Tensor, no_grad
+from femtotorch.tensor import Tensor
 from abc import ABC, abstractmethod
 
 

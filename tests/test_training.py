@@ -9,7 +9,7 @@ gradients or the update step were wrong, loss would not drop to ~0.
 
 import numpy as np
 
-from femtotorch.engine_switch import Tensor
+from femtotorch.tensor import Tensor
 from femtotorch.nn import MLP
 from femtotorch.optimizer import VanillaSGD
 from femtotorch.loss import softmax, cross_entropy

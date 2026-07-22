@@ -77,7 +77,7 @@ def graph_backward(root_graph):
     root_graph.grad = xp.ones_like(root_graph.data) # base case of the recurrence dL/dL = array of ones
     
     # backpropagation
-    for v in reversed(topo): # consumers of t before t, so t.grad is conmplete once visited
+    for v in reversed(topo): # consumers of t before t, so t.grad is complete once visited
 
         if v.grad_node is not None: # if v.grad_node is None it's a leaf Node so there's no backpass to do 
             grad_node = v.grad_node # saved infos about the relations with and between the input nodes

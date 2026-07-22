@@ -1,4 +1,4 @@
-from femtotorch.engine_switch import Tensor, no_grad
+from femtotorch.tensor import Tensor, no_grad
 from femtotorch.nn import Module, MLP, Layer, VanillaConv2d, Conv2d, OptiConv2d, MaxPool2d, \
     BatchNorm2d
 

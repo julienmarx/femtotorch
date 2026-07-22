@@ -1,8 +1,8 @@
 
 import pytest
 import numpy as np
-from femtotorch.engine_switch import Tensor, no_grad
-
+from femtotorch.tensor import Tensor, no_grad
+from femtotorch.engine import Node
 #-------------------------------#
 # Construction & getters
 
@@ -322,9 +322,10 @@ def test_pad_zeros_asymmetric_forward():
     np.testing.assert_allclose(out.data, np.pad(a.data, ((2, 0), (1, 3))))
 
 
-def test_pad_zeros_prev_is_the_real_parent():
+def test_pad_zeros_input_is_the_real_parent():
     a = Tensor([[1., 2.], [3., 4.]])
-    assert a.pad_zeros((1, 1), (1, 1))._prev == {a}
+    b = a.pad_zeros((1, 1), (1, 1))
+    assert b.grad_node.inputs[0] is a
 
 
 def test_pad_zeros_grad():
@@ -367,11 +368,11 @@ def test_reshape_forward():
     np.testing.assert_allclose(out.reshape(6).data, [1, 2, 3, 4, 5, 6])   # flatten
 
 
-def test_reshape_prev_is_the_real_parent():
-    # _prev must hold the source tensor itself, not slices from iterating it
+def test_reshape_input_is_the_real_parent():
+    # must hold the source tensor itself, not slices from iterating it
     a = Tensor([[1., 2., 3.], [4., 5., 6.]])
     out = a.reshape(6)
-    assert out._prev == {a}
+    assert out.grad_node.inputs[0] is a
 
 
 def test_reshape_grad():
@@ -413,10 +414,10 @@ def test_swapaxes_forward():
     # Après swap, les colonnes deviennent des lignes
     np.testing.assert_allclose(out.data, [[1, 4], [2, 5], [3, 6]])
 
-def test_swapaxes_prev_is_the_real_parent():
+def test_swapaxes_input_is_the_real_parent():
     a = Tensor([[1., 2.], [3., 4.]])
     out = a.swapaxes(0, 1)
-    assert out._prev == {a}
+    assert out.grad_node.inputs[0] is a
 
 def test_swapaxes_grad():
     # Vérification par différence finie que le gradient est correct
@@ -485,9 +486,9 @@ def test_im2col_forward_matches_reference(rng, shape, k, stride):
     np.testing.assert_allclose(Tensor(x).im2col(k, stride).data, im2col_reference(x, k, stride))
 
 
-def test_im2col_prev_is_the_real_parent():
+def test_im2col_input_is_the_real_parent():
     x = Tensor(np.zeros((1, 1, 3, 3)))
-    assert x.im2col(2, 1)._prev == {x}
+    assert x.im2col(2, 1).grad_node.inputs[0] is x
 
 
 def test_im2col_grad():
@@ -592,7 +593,7 @@ def test_zero_grad():
     (x ** 2).sum().backward()
     assert np.any(x.grad != 0)
     x.zero_grad()
-    np.testing.assert_array_equal(x.grad, [0, 0])
+    np.testing.assert_array_equal(x.grad, None) #lazy evalution
 
 
 def test_backward_seeds_root():
@@ -661,10 +662,10 @@ def test_softmax_cross_entropy_is_numerically_stable():
     assert Tensor(logits).softmax_cross_entropy(Tensor([1])).data[0] > 50
 
 
-def test_softmax_cross_entropy_prev_is_the_logits():
+def test_softmax_cross_entropy_input_is_the_logits():
     # only the logits are a differentiable parent; the integer targets are not
     logits = Tensor([[1., 2., 3.]])
-    assert logits.softmax_cross_entropy(Tensor([0]))._prev == {logits}
+    assert logits.softmax_cross_entropy(Tensor([0])).grad_node.inputs[0] is logits
 
 
 def test_softmax_cross_entropy_grad():
@@ -704,16 +705,7 @@ def test_no_grad_builds_no_graph():
     with no_grad():
         out = a * b + a
     np.testing.assert_allclose(out.data, a.data * b.data + a.data)   # forward value still correct
-    assert out._prev == set()                                        # ...but no parents recorded
-    assert out._backward() is None                                   # and _backward is the default no-op
-
-
-def test_no_grad_constructor_drops_prev():
-    # even a Tensor built with explicit parents records none while grad is off
-    a = Tensor([1., 2.])
-    with no_grad():
-        out = Tensor([3., 4.], _prev=(a,))
-    assert out._prev == set()
+    assert out.grad_node is None                                        # ...but no Node objects recorded
 
 
 def test_no_grad_blocks_gradient_flow():

@@ -1,5 +1,5 @@
 import numpy as np
-from femtotorch.engine_switch import Tensor, no_grad
+from femtotorch.tensor import Tensor
 
 class Dataloader:
     def __init__(self, X, Y, batch_size, shuffle=True):

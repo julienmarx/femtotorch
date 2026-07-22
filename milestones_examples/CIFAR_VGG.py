@@ -3,8 +3,6 @@ import femtotorch as ft
 import numpy as np
 import time
 
-# Run it from the repo root (so CIFAR_VGG.py finds data/cifar10):
-#     python -c "import femtotorch.profiler as p; p.compare_engines()"
 
 BATCH_SIZE = 64
 class VGG_BN(ft.Module):

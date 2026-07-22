@@ -35,9 +35,7 @@ blocks in the same order, plus [6] which runs everything:
 Phases run SEPARATELY because each instrument distorts the others
 (tracemalloc ~2x slowdown, cProfile ~1us per call, tracer ~1us per op).
 
-Known limits, accepted rather than hidden: exp/log are counted as 1 flop per
-element (understated); the graph-bytes counter counts references, not unique
-buffers; trace() needs the v2 engine; BLAS threads are pinned to 1
+
 (FEMTO_PROFILE_THREADS to override) — the CLI re-execs itself for that,
 training scripts must set the env vars before python starts.
 """
@@ -57,7 +55,9 @@ _PIN_VARS = ("VECLIB_MAXIMUM_THREADS", "OPENBLAS_NUM_THREADS",
 # this module runs twice under `python -m` (as femtotorch.profiler, then as
 # __main__); only the first run can judge the pin, its verdict is stashed here
 if "_FEMTO_PIN_OK" not in os.environ:
-    _ok = (all(os.environ.get(v) for v in _PIN_VARS)
+    # any (not all): only the var matching the installed BLAS matters
+    # (VECLIB on macOS Accelerate, OPENBLAS/MKL/BLIS elsewhere)
+    _ok = (any(os.environ.get(v) for v in _PIN_VARS)
            or ("numpy" not in sys.modules and "cupy" not in sys.modules))
     os.environ["_FEMTO_PIN_OK"] = "1" if _ok else "0"
 _PIN_OK = os.environ["_FEMTO_PIN_OK"] == "1"
@@ -77,7 +77,7 @@ from pathlib import Path
 from femtotorch.backend import xp, GPU, synchronize
 from femtotorch import engine
 from femtotorch import operations as ops
-from femtotorch.engine_switch import Tensor, no_grad
+from femtotorch.tensor import Tensor, no_grad
 
 
 # ------------------------------------------------------------------ FLOP counting
@@ -297,7 +297,8 @@ class Profiler:
     def __init__(self):
         self.roofs = None       # {'gflops_roof', 'gbps_roof', 'ridge_flops_per_byte'}
         self._dispatch = None   # {'framework_ns', 'kernel_ns', 'overhead_ns'}
-        if not _PIN_OK:
+        # thread pinning is a CPU/BLAS concern; cupy's GPU kernels ignore it
+        if not GPU and not _PIN_OK:
             warnings.warn(
                 "BLAS threads are not pinned (numpy was imported before the pin "
                 "could apply): measurements will wobble with thread scheduling. "
@@ -461,11 +462,8 @@ class Profiler:
         against the maxima of [1], then sums up where the step time went.
         Wall time minus time inside the ops = the engine's own python cost
         (graph build, grad accumulation) — printed as "(engine overhead)".
-        v2 engine only: v1's closures don't go through ops.Function.
         """
-        if not Tensor.__module__.endswith("TensorV2"):
-            raise RuntimeError("trace() hooks operations.Function, which only the "
-                               "v2 engine uses — run with FEMTO_ENGINE=v2")
+        
         if self.roofs is None:
             self.calibrate(verbose=verbose)
         if self._dispatch is None:
@@ -709,58 +707,3 @@ if __name__ == "__main__":
         Profiler().calibrate(force=args.force)
     else:
         _demo(batch=args.batch, iters=args.iters)
-
-
-# ============================================================================
-# EPHEMERAL — two-engine comparison. DELETE THIS WHOLE BLOCK when done.
-#
-# The engine (closures = tensor.py / Node = TensorV2.py) is chosen at IMPORT
-# time by FEMTO_ENGINE, so the only honest way to profile both is two separate
-# processes. compare_engines() runs your CIFAR_VGG.py twice, once per possible
-# FEMTO_ENGINE value, BLAS pinned. It does NOT trust the label: each child
-# announces the engine it actually loaded (Tensor.__module__), so the run is
-# correctly identified even while engine_switch.py's mapping is inverted.
-# The child patch also makes section [3] SKIP on the old engine (whose closures
-# the tracer can't hook) instead of aborting the whole report.
-#
-# Run it from the repo root (so CIFAR_VGG.py finds data/cifar10):
-#     python -c "import femtotorch.profiler as p; p.compare_engines()"
-#
-# CIFAR_VGG.py runs its full body (one train batch -> profiler report -> a 10k
-# test eval). The two reports you want print BEFORE each eval; let it finish, or
-# read them as they appear.
-# ============================================================================
-
-# runs in each spawned child only
-if os.environ.get("_FEMTO_COMPARE_CHILD") == "1":
-    _is_new = Tensor.__module__.endswith("TensorV2")
-    print(f"\n>>> real engine loaded: {Tensor.__module__} "
-          f"({'NEW Node engine' if _is_new else 'OLD closure engine'})", flush=True)
-
-    # the tracer can only hook the new engine; skip [3] on the old one
-    _orig_trace = Profiler.trace
-
-    def _trace_or_skip(self, step_fn, verbose=True):
-        try:
-            return _orig_trace(self, step_fn, verbose=verbose)
-        except RuntimeError as exc:
-            print(f"    skipped — {exc}")
-            return None
-
-    Profiler.trace = _trace_or_skip
-
-
-def compare_engines(script="milestones_examples/CIFAR_VGG.py"):
-    import subprocess
-
-    pin = {v: "1" for v in _PIN_VARS}  # pin the children so numbers don't wobble
-    for value in ("v1", "v2"):         # the two values cover both engines, whichever way the switch maps them
-        print("\n" + "#" * 78)
-        print(f"#  spawning {script}  (FEMTO_ENGINE={value})".ljust(77) + "#")
-        print("#" * 78, flush=True)
-
-        env = {**os.environ, **pin,
-               "FEMTO_ENGINE": value, "_FEMTO_COMPARE_CHILD": "1"}
-        env.pop("_FEMTO_PIN_OK", None)      # let the child judge the pin afresh
-        env.pop("_FEMTO_PROF_REEXEC", None)
-        subprocess.run([sys.executable, script], env=env)
