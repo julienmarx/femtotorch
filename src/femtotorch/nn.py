@@ -229,7 +229,7 @@ class Conv2d(Module):
         return out_width
     
 
-class OptiConv2d(Module):
+class Conv2d_v2(Module):
     """
     Optimized version, reducing as much as possible python overhead, using vectorized and fused operations (im2col reshape and transform notably)
     """
@@ -288,18 +288,62 @@ class OptiConv2d(Module):
     def out_width(self, in_width):
         out_width = conv_out_size((in_width, in_width), self.kernel_size, self.stride, self.padding)[-1]
         return out_width
+    
+class OptiConv2d(Conv2d_v2):
+    """
+    Optimized version, changing the layout of axis to have wider contiguous blocks in inner axis, 
+    and fused operation to avoid copying data and intermediate Tensors
+    """
+    def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1, bias = True):
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.bias = bias
+        self.fan_in = kernel_size * kernel_size * in_channels
+
+        std = np.sqrt(2.0/(self.fan_in))
+        self.W = Tensor(rng.standard_normal((self.out_channels, self.fan_in)) * std, dtype=np.float32) # swapped out_channels and fan_in
+        self.B = Tensor(np.zeros((1, out_channels, 1, 1)), dtype=np.float32) if self.bias else None
+
+    def forward(self, X: Tensor):
+        padded_X = X.pad_zeros((0, 0), (0, 0), (self.padding, self.padding), (self.padding, self.padding))
+
+        feature_map = padded_X.conv2dfunction(W=self.W, kernel_size=self.kernel_size, stride=self.stride)
+        
+        if self.bias:
+            out = feature_map + self.B 
+        else:
+            out = feature_map
+        
+        return out # shape (batch, out_channels, out_height, out_width)
+
+
 
 class MaxPool2d(Module):
     """
     MaxPool layer with stride == kernel_size
     The windows tile the input with no overlap, so the whole layer is a reshape
     into windows followed by a max over the two in-window axes.
+
+
+
+    Old conv wasn't contiguous NCHW. Those swapaxes(2,3).swapaxes(1,2) calls left it as channels-last in memory:
+    shape in memory:(batch, out_h, out_w, out_c)
+    strides: (65536, 1, 2048, 64), so the C axis had stride 1 and size 64
     """
     def __init__(self, kernel_size=2):
         self.kernel_size = kernel_size
         self.stride = kernel_size
 
     def forward(self, X: Tensor): # X has shape (batch, in_channels, height, width)
+
+        # Optimized path for vgg 2x2 kernel stride =2
+        if self.kernel_size == 2 and self.stride == 2 and X.shape[-1] % 2 == 0 and X.shape[-2] % 2 == 0:
+            return X.maxpool2x2()
+
+    
         batch, in_channels, height, width = X.shape
         
         assert height % self.kernel_size == 0 and width % self.kernel_size == 0,\
@@ -323,6 +367,7 @@ class MaxPool2d(Module):
     def out_width(self, in_width):
         out_width = in_width // self.kernel_size
         return out_width
+
 
 
 class BatchNorm2d(Module):

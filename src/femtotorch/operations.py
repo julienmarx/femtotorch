@@ -409,10 +409,115 @@ class SoftMaxCrossEntropy(Function):
         return (grad * g[:,xp.newaxis],)
 
 
-            
+class Conv2dFunction(Function):
+    """
+    Fused im2col and matmul for convolution operation
+    """
+    @staticmethod
+    def forward(node: Node, a, w, kernel_size, stride):
+        """
+        a: Array of shape (batch, inchanel, height, width) expected to already be padded
 
-
+        w: Array of shape (out_channels, kernel_size * kernel_size * in_channels)
+        """
+        batch, in_channel, height, width = a.shape
+        out_height = (height - kernel_size) // stride + 1
+        out_width = (width - kernel_size) // stride + 1 
 
         
+            
+        window = sliding_window_view(a, (kernel_size, kernel_size), axis=(-2, -1)) # .shape : (b, in_c, h-(k-1), w-(k-1), k, k)
+        window = window[:, :, ::stride, ::stride, :, :] # .shape: (b, in_c, (h-(k-1) // stride)+1, (w-(k-1) // stride)+1, k, k) 
+        window = window.transpose(1, 4, 5, 0, 2, 3) # .shape: (in_c, k, k, b, out_h, out_w)
+        # In memory still: (batch, inchanel, height, width)
+        # so now physical gather did with fetch of block of memory of size width instead of kernel_size
+        cols = window.reshape(-1, batch * out_height * out_width) #.shape: (kernel_size * kernel_size * in_channels, batch * out_height * out_width)
 
-    
+        # (out_channels, kernel_size * kernel_size * in_channels) @ (kernel_size * kernel_size * in_channels, batch * out_height * out_width)
+        out_flatten = w @ cols # (out_channels, batch * out_height * out_width)
+
+        node.save(cols, w, a.shape, kernel_size, stride)
+
+        out_channels = w.shape[0]
+        feature_map = out_flatten.reshape(out_channels, batch, out_height, out_width).swapaxes(0, 1) 
+        
+        return feature_map # .shape: (batch, out_channels, out_height, out_width)
+
+    @staticmethod
+    def backward(node: Node, g):
+        """
+        g : (batch, out_channels, out_height, out_width)
+        """
+        cols, w, a_shape, kernel_size, stride = node.saved
+        batch, in_channel, height, width = a_shape
+        out_height = (height - kernel_size) // stride + 1
+        out_width = (width - kernel_size) // stride + 1 
+        out_channels = w.shape[0]
+        N = batch * out_height * out_width
+
+       # 1) undo output reshape+swapaxes(0,1):  (b, oc, oh, ow) -> (oc, N)
+        g_flat = g.swapaxes(0, 1).reshape(out_channels, N)
+
+        # 2) matmul backward on  out_flatten = w @ cols
+        grad_w = g_flat @ cols.swapaxes(-1, -2)     # (oc, fan_in)   -> matches W
+        grad_cols = w.swapaxes(-1, -2) @ g_flat        # (fan_in, N)
+
+        # 3) undo im2col reshape+transpose(1,4,5,0,2,3). inverse perm is (3,0,4,5,1,2)
+        grad_windows = grad_cols.reshape(in_channel, kernel_size, kernel_size, batch, out_height, out_width)
+        grad_windows = grad_windows.transpose(3, 0, 4, 5, 1, 2)   # (b, in_c, oh, ow, k, k)
+
+        # 4) scatter-add overlapping windows back onto the padded input
+        grad_a = xp.zeros(a_shape, dtype=g.dtype)
+        for ky in range(kernel_size):
+            for kx in range(kernel_size):
+                grad_a[:, :,
+                    ky : ky + stride * out_height : stride,
+                    kx : kx + stride * out_width  : stride] += grad_windows[:, :, :, :, ky, kx]
+
+        return (grad_a, grad_w)   # order matches inputs = (padded_X, W)
+
+
+
+class MaxPool2x2Function(Function):
+    """
+    2x2 max pool, stride 2, non-overlapping. Hardcoded for VGG.
+    forward:  out[p] = max of the 4 pixels in window p
+    backward: the grad of out[p] flows to the single pixel that won window p
+              (ties resolve to the earliest corner: TL > TR > BL > BR)
+    """
+    @staticmethod
+    def forward(node: Node, a):
+        # a: (B, C, H, W). Each slice picks one corner of every window -> (B, C, H//2, W//2)
+        top_left     = a[:, :, 0::2, 0::2]
+        top_right    = a[:, :, 0::2, 1::2]
+        bottom_left  = a[:, :, 1::2, 0::2]
+        bottom_right = a[:, :, 1::2, 1::2]
+
+
+        # Running maximum: start by assuming top_left wins every window, then let
+        # each of the other three corners challenge it.
+        out = top_left
+        argmax = xp.zeros(out.shape, dtype=xp.uint8)   # initial 0:top_left; 1:top_right; 2:bottom_left; 3:bottom_right
+
+        for corner_id, corner in ((1, top_right), (2, bottom_left), (3, bottom_right)):
+              # strict > keeps the earlier corner on ties
+            wins   = xp.greater(corner, out)   # wins is a boolean array
+            out    = xp.where(wins, corner, out) # if wins[i]: out[i] = corner[i] else: keep out[i] unchanged
+            argmax = xp.where(wins, corner_id, argmax) # if wins[i]: argmax[i] = corner[i] else: keep out[i] unchanged
+
+        node.save(argmax, a.shape)
+        return out
+
+    @staticmethod
+    def backward(node: Node, g):
+        # g: (B, C, H//2, W//2), one gradient per window.
+        argmax, input_shape = node.saved
+        grad = xp.zeros(input_shape, dtype=g.dtype)
+
+        # The 4 slices tile the input exactly, so every element is written once.
+        grad[:, :, 0::2, 0::2] = xp.where(argmax == 0, g, 0)   # top-left won
+        grad[:, :, 0::2, 1::2] = xp.where(argmax == 1, g, 0)   # top-right won
+        grad[:, :, 1::2, 0::2] = xp.where(argmax == 2, g, 0)   # bottom-left won
+        grad[:, :, 1::2, 1::2] = xp.where(argmax == 3, g, 0)   # bottom-right won
+
+        return (grad,)

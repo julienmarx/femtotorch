@@ -179,6 +179,16 @@ class Tensor:
         t = target.data if isinstance(target, Tensor) else xp.asarray(target)
         return _forward(ops.SoftMaxCrossEntropy, self, target = t)
 
+    def conv2dfunction(self, W, kernel_size, stride):
+        return _forward(ops.Conv2dFunction, self, _as_tensor(W, dtype = self.data.dtype), kernel_size = kernel_size, stride = stride)
+
+    def maxpool2x2(self):
+        return _forward(ops.MaxPool2x2Function, self)
+
+
+
+    # Methods derived from primitives
+    
     def __neg__(self):
         return self * -1
     
@@ -200,3 +210,4 @@ class Tensor:
 
     def __rtruediv__(self, other):
         return (self ** - 1) * other
+    
