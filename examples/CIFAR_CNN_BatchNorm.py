@@ -63,7 +63,7 @@ class CNN_BatchNorm:
 Xtrain, Ytrain, Xtest, Ytest = ft.load_cifar10("data/cifar10")
 net = CNN_BatchNorm()
 params_list = net.parameters()
-gradient_updater = ft.SGD_Moment(params_list, 0.05)
+gradient_updater = ft.SGD(params_list, 0.05)
 lr_scheduler = ft.CosineScheduler(gradient_updater, 30)
 batch_generator =  ft.Dataloader(Xtrain, Ytrain, batch_size=net.batch_size, shuffle=True) 
 

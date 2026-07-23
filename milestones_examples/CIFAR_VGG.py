@@ -1,9 +1,11 @@
 
 import femtotorch as ft
 import numpy as np
-import time
 
 
+"""
+VECLIB_MAXIMUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python milestones_examples/CIFAR_VGG.py
+"""
 BATCH_SIZE = 64
 class VGG_BN(ft.Module):
     """
@@ -61,7 +63,7 @@ class VGG_BN(ft.Module):
 
         return logits
     
-    def set__batchnorm(self, training = True):
+    def set_batchnorm(self, training = True):
         self.batchnorm1.set_training(training)
         self.batchnorm1b.set_training(training)
 
@@ -87,19 +89,16 @@ class VGG_BN(ft.Module):
 Xtrain, Ytrain, Xtest, Ytest = ft.load_cifar10("data/cifar10")
 net = VGG_BN()
 params_list = net.parameters()
-gradient_updater = ft.SGD_Moment(params_list, 0.05)
+gradient_updater = ft.SGD(params_list, 0.05)
 lr_scheduler = ft.CosineScheduler(gradient_updater, 30)
 batch_generator =  ft.Dataloader(Xtrain, Ytrain, batch_size=BATCH_SIZE, shuffle=True) 
 
 # Training loop
 for epochs in range(1):
 
-    t1 = time.perf_counter()
 
     for i, (Xbatch, Ybatch) in enumerate(batch_generator):
         
-        ft.synchronize()
-        t0 = time.perf_counter()
 
         gradient_updater.zero_grad() # reset previous gradients
 
@@ -110,26 +109,18 @@ for epochs in range(1):
         
         if i % 30 == 0:     
             print(f"batch: {i}, \n loss: {loss.data}")
-            break
 
-            # memory consumption on gpu
-            stats = ft.memory_stats()
-            if stats is not None:
-                print(f"pool {stats['pool_used']/1e6:.0f} / {stats['pool_total']/1e6:.0f} MB, "
-                    f"device free {stats['dev_free']/1e6:.0f} MB, \n")
-            
+        break
 
         # first inference
     # lr decay per epoch
     lr_scheduler.step()
     print(f"learning_rate:{gradient_updater.get_lr()}")
-    profiler = ft.Profiler()
-    profiler.profile_model(net, Xbatch, Ybatch)   # X: one input batch, y: the class indices
-
+    
 
     # test per epoch
     with ft.no_grad():
-        net.set__batchnorm(training=False)
+        net.set_batchnorm(training=False)
 
         correct = 0
         for start in range(0, 10000, 500):
@@ -137,10 +128,13 @@ for epochs in range(1):
             correct += (ft.to_cpu(pred.data) == Ytest[start:start+500]).sum()
             
 
-    accuracy = correct / 1000
+    accuracy = correct / 10000
     print(f"epoch{epochs} ,test accuracy: {accuracy}")
-    net.set__batchnorm(training= True)
+    net.set_batchnorm(training= True)
 
+# profiler block:
+profiler = ft.Profiler()
+profiler.profile_model(net, Xbatch, Ybatch)   # X: one input batch, y: the class indices
 
 
 

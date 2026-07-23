@@ -5,7 +5,7 @@ batch_size = 64
 
 Xtrain, Ytrain, Xtest, Ytest = ft.load_mnist("data/fashion_mnist")
 Xtrain, Ytrain = Xtrain[:10000], Ytrain[:10000]
-conv = ft.VanillaConv2d(in_channels=1, out_channels=8, kernel_size=3, stride =2, padding=1)
+conv = ft.VanillaConv2d(in_channels=1, out_channels=4, kernel_size=3, stride =2, padding=1)
 model = ft.MLP(784, [256, 10])
 gradient_updater = ft.VanillaSGD([*model.parameters(), *conv.parameters()], 0.05)
 batch_generator =  ft.Dataloader(Xtrain, Ytrain, batch_size=batch_size, shuffle=True) 

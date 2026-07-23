@@ -23,7 +23,7 @@ class Module(ABC):
     
     def zero_grad(self):
         for p in self.parameters():
-            p.grad = None # lazy initialization
+            p.zero_grad()
 
 class Layer(Module):
 

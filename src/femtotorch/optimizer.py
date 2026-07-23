@@ -33,7 +33,7 @@ class VanillaSGD(Optimizer):
     
 
 
-class SGD_Moment(Optimizer):
+class SGD(Optimizer):
     
     def __init__(self, parameters, learning_rate, weight_decay = 5e-4, momentum=0.9): #weight_decay default for cifar10
         super().__init__(parameters, learning_rate)
