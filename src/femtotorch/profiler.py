@@ -1,31 +1,29 @@
 """
 femtotorch profiler (mostly AI generated).
 
-Finds the bottleneck that makes a training step slow. Every op is placed on the
-roofline: its arithmetic intensity (flops per byte) decides which ceiling it
-lives under, and how close it gets to that ceiling is the diagnosis:
+Finds the bottleneck that makes a training step slow by splitting the step's
+time into a true sum of where it actually goes:
 
-  compute     matmul/conv running near the math roofline — nothing wasted
-  bandwidth   elementwise op streaming memory near the RAM roofline
-  math-idle   matmul/conv region, but FAR below the math roofline: the compute
-              units sit idle behind fused-copy / im2col / scatter overhead, or a
-              matmul too small to warm up
-  mem-idle    elementwise/reduction region, but FAR below the RAM roofline: the
-              bus sits idle behind a strided / scatter / broadcast access pattern
-  dispatch    the time goes to python bookkeeping between ops (graph build, grad
-              accumulation), or ops too small to leave the interpreter
+  compute     time doing math at the machine's peak rate (the matmul/conv floor)
+  bandwidth   time moving bytes at the machine's peak rate (the streaming floor)
+  overhead    time ABOVE the roofline — neither computing nor streaming at peak:
+              im2col/scatter copies, strided or broadcast access, kernel warmup.
+              This is the waste, and usually the biggest bucket in a toy engine.
+  dispatch    time in python between ops (graph build, grad accumulation)
   capacity    the RAM is full, the OS swaps to the SSD, everything stalls
 
-math-idle and mem-idle are the honest split of what a single "under-used" bucket
-used to hide: both mean the machine is idle, but one blames compute overhead and
-the other a memory access pattern — different problems, different fixes.
+An op that does F flops and moves B bytes cannot finish faster than
+max(F/peak_flops, B/peak_bytes) even on a flawless kernel — that FLOOR is charged
+to compute or bandwidth (whichever set it), and whatever the op spends on top is
+overhead. So the verdict adds up: compute + bandwidth + overhead + dispatch =
+100%, and "compute" is what the math would cost if every kernel ran at peak — a
+real, non-zero slice, not the old bucket that read 0% while the convs churned.
 
 Method: first measure the two MAXIMA this machine reaches THROUGH numpy — one big
-matmul gives the top math speed (GFLOP/s), one big streaming add gives the top
-data speed (GB/s); their ratio is the "ridge" intensity. Then for every op:
-intensity >= ridge -> judge against the math roof (compute / math-idle);
-intensity <  ridge -> judge against the data roof (bandwidth / mem-idle);
-below 3x the python floor -> dispatch; page faults during the step -> capacity.
+matmul gives peak_flops (GFLOP/s), one big streaming add gives peak_bytes (GB/s).
+Fused ops MUST count the gemm hidden inside them (Conv2dFunction is im2col +
+matmul), or their math vanishes and the whole op masquerades as overhead.
+Page faults during the step -> capacity.
 
 Usage:
     from femtotorch.profiler import Profiler
@@ -95,9 +93,10 @@ from femtotorch.tensor import Tensor, no_grad
 # Exact math count per op, from the array shapes — this is what places an op on
 # the roofline. Fused ops MUST count the gemm hidden inside them: Conv2dFunction
 # is an im2col + matmul, so with no counter it reads as a tiny memory op and its
-# real arithmetic (the largest in the whole step) disappears into "under-used".
+# real arithmetic (the largest in the whole step) vanishes — the whole conv then
+# masquerades as pure overhead instead of showing its compute floor.
 # Pure movement ops (reshape, pad, im2col, maxpool...) are 0 on purpose: they only
-# shuffle bytes, so their GB/s is what judges them.
+# shuffle bytes, so their memory floor (GB/s) is what judges them.
 
 def _matmul_fwd_flops(arrays, out, params):
     a, _b = arrays
@@ -307,15 +306,13 @@ def _mb(nbytes):
 
 
 # ------------------------------------------------------------------ the profiler
-# plain-language name for each bound, one per bucket of the final verdict.
-# The old single "under-used" is split by roofline region: matmul/conv ops that
-# leave the COMPUTE units idle (math-idle) vs elementwise/reduction ops that leave
-# the MEMORY bus idle (mem-idle) — two different problems with two different fixes.
+# plain-language name for each bucket of the final verdict. The step's time is a
+# true sum of these four: compute + bandwidth are the irreducible at-peak floors,
+# overhead is everything spent above the roofline, dispatch is python between ops.
 _BUCKET_LABEL = {
-    "compute":   "compute    (matmul/conv near the math roofline)",
-    "bandwidth": "bandwidth  (elementwise near the RAM roofline)",
-    "math-idle": "math-idle  (matmul/conv region, compute units under-fed)",
-    "mem-idle":  "mem-idle   (elementwise region, memory bus under-fed)",
+    "compute":   "compute    (doing math at the machine's peak rate)",
+    "bandwidth": "bandwidth  (moving bytes at the machine's peak rate)",
+    "overhead":  "overhead   (above roofline: copies, strided memory, warmup)",
     "dispatch":  "dispatch   (python bookkeeping between ops)",
 }
 
@@ -471,34 +468,40 @@ class Profiler:
         return result
 
     # ============================================================== [3]
-    # PER-OP TRACE — the verdict. Spies on every op of ONE training step, places
-    # each on the roofline of [1] -> compute / bandwidth / math-idle / mem-idle /
-    # dispatch, then sums up where the step time goes.
+    # PER-OP TRACE — the verdict. Spies on every op of ONE training step, splits
+    # each op's measured time into its roofline floor (compute / bandwidth) and the
+    # overhead piled on top, then sums the whole step into those four buckets.
     # ==============================================================
-    def _classify(self, per_call_ns, gflops, gbps, intensity):
+    def _op_split(self, calls, ns, flops, nbytes):
         """
-        Place one op on the roofline. Its arithmetic intensity (flops per byte)
-        picks the ceiling; how close it gets to that ceiling is the verdict:
+        Split ONE op's measured time into where it actually went.
 
-          intensity >= ridge -> compute region, ceiling is the math roof
-              >= 50% of it -> "compute"     (math-bound: do less math)
-              <  50%       -> "math-idle"   (units idle behind im2col/scatter
-                                             overhead, or a matmul too small)
-          intensity <  ridge -> memory region, ceiling is the data roof
-              >= 50% of it -> "bandwidth"   (bus saturated: move fewer bytes)
-              <  50%       -> "mem-idle"    (bus idle behind a strided / scatter
-                                             / broadcast access pattern)
+        An op that does F flops and moves B bytes cannot finish faster than
+        max(F/peak_flops, B/peak_bytes) even on a flawless kernel — that is its
+        roofline FLOOR, the irreducible time. Whatever it spends ON TOP of the
+        floor is OVERHEAD: im2col/scatter copies, strided or broadcast access,
+        kernel warmup. The floor is charged to whichever resource set it
+        (compute or bandwidth); the rest to overhead. So the time is real:
+        floor + overhead == the op's measured time.
 
-        An op below 3x the python floor is too small to say anything about the
-        hardware -> "dispatch" (the interpreter, not the machine, is the limit).
+        Returns (region, floor_ms, overhead_ms, tag). An op below 3x the python
+        floor is too small to read the hardware -> all of it is "dispatch".
         """
-        if per_call_ns < 3 * self._dispatch["framework_ns"]:
-            return "dispatch"
-        if intensity >= self.roofs["ridge_flops_per_byte"]:   # compute region
-            frac = gflops / self.roofs["gflops_roof"]
-            return "compute" if frac >= 0.5 else f"math-idle ({100 * frac:.0f}% of math roof)"
-        frac = gbps / self.roofs["gbps_roof"]                 # memory region
-        return "bandwidth" if frac >= 0.5 else f"mem-idle ({100 * frac:.0f}% of RAM roof)"
+        seconds = ns / 1e9
+        math_s = flops / (self.roofs["gflops_roof"] * 1e9)    # math time at peak
+        mem_s = nbytes / (self.roofs["gbps_roof"] * 1e9)      # streaming time at peak
+        floor_s = max(math_s, mem_s)
+        overhead_s = max(0.0, seconds - floor_s)
+        region = "compute" if math_s >= mem_s else "bandwidth"
+
+        if ns / calls < 3 * self._dispatch["framework_ns"]:
+            return "dispatch", 0.0, 0.0, "dispatch"
+
+        # tag = the op's dominant time sink: at-peak work if it clears half its
+        # own time, else overhead (with the % of its time that overhead ate)
+        efficiency = floor_s / seconds if seconds > 0 else 0.0
+        tag = region if efficiency >= 0.5 else f"overhead ({100 * (1 - efficiency):.0f}%)"
+        return region, floor_s * 1e3, overhead_s * 1e3, tag
 
     def trace(self, step_fn, verbose=True):
         """
@@ -520,28 +523,28 @@ class Profiler:
             synchronize()
             wall_ns = time.perf_counter_ns() - t0
 
+        # dispatch starts as the untraced wall time: the engine's own python
+        # between ops (graph build, topo sort, grad accumulation).
+        traced_ns = sum(v[1] for v in tracer.stats.values())
+        buckets = {"compute": 0.0, "bandwidth": 0.0, "overhead": 0.0,
+                   "dispatch": (wall_ns - traced_ns) / 1e6}
         rows = []
         for (name, direction), (calls, ns, flops, nbytes) in tracer.stats.items():
             seconds = ns / 1e9
             gflops = (flops / seconds) / 1e9 if seconds > 0 else 0.0
             gbps = (nbytes / seconds) / 1e9 if seconds > 0 else 0.0
-            intensity = flops / nbytes if nbytes > 0 else 0.0   # flops/byte -> roofline region
+            region, floor_ms, overhead_ms, bound = self._op_split(calls, ns, flops, nbytes)
+            if bound == "dispatch":
+                buckets["dispatch"] += ns / 1e6       # too small to read the hardware
+            else:
+                buckets[region] += floor_ms           # irreducible at-peak work
+                buckets["overhead"] += overhead_ms    # the waste piled on top
             rows.append({
                 "op": name, "dir": direction, "calls": calls,
                 "total_ms": ns / 1e6, "pct_of_step": 100 * ns / wall_ns,
-                "gflops": gflops, "gbps": gbps,
-                "bound": self._classify(ns / calls, gflops, gbps, intensity),
+                "gflops": gflops, "gbps": gbps, "bound": bound,
             })
         rows.sort(key=lambda r: r["total_ms"], reverse=True)
-        traced_ns = sum(v[1] for v in tracer.stats.values())
-
-        # summary: step time by cause. Each tag's first word is its bucket key,
-        # so "math-idle (23% of math roof)" -> "math-idle"; dispatch starts as the
-        # untraced wall time (engine graph-build + grad accumulation between ops).
-        buckets = {"compute": 0.0, "bandwidth": 0.0, "math-idle": 0.0,
-                   "mem-idle": 0.0, "dispatch": (wall_ns - traced_ns) / 1e6}
-        for r in rows:
-            buckets[r["bound"].split(" ")[0]] += r["total_ms"]
 
         report = {
             "rows": rows,
@@ -572,11 +575,12 @@ class Profiler:
         print(f"    peak memory retained by the autograd graph: "
               f"{report['peak_graph_mb']:.2f} MB")
         print()
-        print("    verdict — where the time of one step goes:")
-        for key in ("compute", "bandwidth", "math-idle", "mem-idle", "dispatch"):
+        print(f"    verdict — where the {report['wall_ms']:.0f} ms of one step actually goes "
+              f"(each op = at-peak floor + overhead):")
+        for key in ("compute", "bandwidth", "overhead", "dispatch"):
             pct = 100 * report["buckets"][key] / report["wall_ms"]
             bar = "#" * round(pct / 2.5)
-            print(f"      {_BUCKET_LABEL[key]:<56}{pct:>5.1f}%  {bar}")
+            print(f"      {_BUCKET_LABEL[key]:<61}{pct:>5.1f}%  {bar}")
 
     # ============================================================== [4]
     # PYTHON HOTSPOTS — cProfile: which exact function eats the time.
