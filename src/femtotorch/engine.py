@@ -54,7 +54,10 @@ def broadcast_back(grad, shape, axis, keepdims):
     return xp.broadcast_to(grad, shape)
 
 # Construction of the computation graph and gradient descent
-def graph_backward(root_graph):
+def graph_backward_recursive(root_graph):
+    """
+    Historic version using recurrence which borrows the interpreter's call stack as its data structure,
+    """
 
     # Build topological (oldest node to youngest) ordering of all nodes in the computation graph
     topo = []
@@ -73,6 +76,47 @@ def graph_backward(root_graph):
             topo.append(v)
 
     build_topo(root_graph)
+
+    root_graph.grad = xp.ones_like(root_graph.data) # base case of the recurrence dL/dL = array of ones
+    
+    # backpropagation
+    for v in reversed(topo): # consumers of t before t, so t.grad is complete once visited
+
+        if v.grad_node is not None: # if v.grad_node is None it's a leaf Node so there's no backpass to do 
+            grad_node = v.grad_node # saved infos about the relations with and between the input nodes
+            grads = grad_node.function.backward(grad_node, v.grad) # compute the gradient that is going to be backpassed
+            
+            # update the gradient of each input nodes
+            for input_tensor, g in zip(grad_node.inputs, grads):
+                input_tensor._accumulate_grad(g) 
+
+            # once the gradients of v are backpassed no need to keep infos about them until the end of the current backpropagation
+            v.grad = None 
+            v.grad_node = None
+
+def graph_backward(root_graph):
+    """
+    visited : tag to know if the node has been added to topo list
+
+    """
+    # Iterative version to avoid cycle reference build_topo -> closure -> build_topo
+    # Build topological (oldest node to youngest) ordering of all nodes in the computation graph
+    topo = []
+    visited = set()
+    stack = [(root_graph, False)]
+    while stack : # while stack is not empty (so until (root_graph, False) or (root_graph, True) is in it)
+        v, children_are_revealed = stack.pop()
+
+        if children_are_revealed:
+            topo.append(v)
+            # and we dont append back v to the stack
+
+        elif id(v) not in visited:
+            visited.add(id(v))
+            stack.append((v, True)) # tag as node with children discovered
+            if v.grad_node is not None:
+                for child in v.grad_node.inputs:
+                    stack.append((child, False))
 
     root_graph.grad = xp.ones_like(root_graph.data) # base case of the recurrence dL/dL = array of ones
     
