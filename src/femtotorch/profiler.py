@@ -673,14 +673,14 @@ class Profiler:
 
         def fwd_infer():
             with no_grad():
-                model.forward(X)
+                model.__call__(X)
 
         def fwd_graph():
-            model.forward(X)
+            model.__call__(X)
 
         def make_loss():
             model.zero_grad()
-            return loss_fn(model.forward(X), target)
+            return loss_fn(model.__call__(X), target)
 
         def step():
             loss = make_loss()

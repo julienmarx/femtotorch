@@ -23,7 +23,7 @@ class Dataloader:
             right_point = left_point + self.batch_size
 
             # slice 'batch_size' indices in the now randomized array of indices
-            batch_indices = indices[left_point:right_point] # NumPy slice that extends beyond the end is silently truncated, useful for last batch
+            batch_indices = indices[left_point:right_point] # NumPy slice that goes beyond the end is discarded, useful for last batch
             
-            # take advantage of numpy indexing
-            yield Tensor(self.X[batch_indices]), self.Y[batch_indices] # pause without stopping the loop
+            # the batch indices are messy (46, 143, 32, etc) but numpy indexing allows to pluck them out (with C speed)
+            yield Tensor(self.X[batch_indices]), self.Y[batch_indices] # pause without stopping the loop, and continue when i need another batch in training loop

@@ -5,63 +5,68 @@ from abc import ABC, abstractmethod
 
 
 # Initialize the random number generator
-rng = np.random.default_rng()
+rng = np.random.default_rng() # used in generation of arrays of weights
 
 
 class Module(ABC):
 
     @abstractmethod
-    def forward(self, X):
+    def __call__(self, X: Tensor):
         """Compute output"""
 
     def parameters(self):
         """returns list of weights (Tensor objects)"""
         return []
-
-    def __call__(self, X: Tensor):
-        return self.forward(X)
     
     def zero_grad(self):
         for p in self.parameters():
             p.zero_grad()
 
+
+
 class Layer(Module):
 
     def __init__(self, nin, nout, activation = True):
-        # std using He (if ReLU), std using Xavier-Glorot (if not)
 
-        # without it training the MLP was impossible because the std exploded after just one hidden layer
-        # which led to underflow in the loss function with exp(big_negative_number) = 0 by underflow
-        # then the proba = 0 was fed into the gradient of crossentropy which has a log and log(0) = inf ;(
+        # Initialize weights with good variance scale (std) for numerical stability
+        # He init: std = np.sqrt(2.0/nin) if ReLU
+        # Xavier-Glorot = np.sqrt(1/nin) (if not ReLU)
+
+        # Without it training the MLP was impossible because the standard deviation exploded after just one hidden layer
+        # That explosion led to underflow in softmax: exp(big_negative_number) = 0 by underflow
+        # Then the 0 was fed into the log of crossentropy ( and log(0) is undefined ;( )
         std = np.sqrt(2.0/nin) if activation else np.sqrt(1/nin)
-        self.W = Tensor(rng.standard_normal((nin, nout)) * std, dtype=np.float32)
-        # Problematic original initialization: rng.uniform(-1.0, 1.0, size= (nin, nout)))
+        self.W = Tensor(rng.standard_normal((nin, nout)) * std, dtype=np.float32) # Bad initialization would be : rng.uniform(-1.0, 1.0, size= (nin, nout)))
+        
         
         self.B = Tensor(np.zeros((1, nout)), dtype=np.float32)
         self.activation = activation
 
-    def forward(self, X): # forward pass but with Layer(X)
+    def __call__(self, X):
         linear = (X @ self.W) + self.B # the bias vector self.B is broadcasted
         return linear.relu() if self.activation else linear
     
     def parameters(self):
-        return [self.W, self.B] # python list returns W and B reference
+        return [self.W, self.B] # python list returns W and B references
 
 class MLP(Module):
+    """
+    Composition of linear map with the Relu non linear function (0 if x<=0; x if x>0)
+    """
 
     def __init__(self, nin, nouts):
 
-        sizes = [nin] + nouts # each contiguous couple of integers in this list gives info for layers
+        sizes = [nin] + nouts # each contiguous couple of integers in this list gives the input/output size of one layer
         self.layers = []
 
-        # Iterate through to create all hidden layers with ReLU
+        # Iterate through the first (n-1) couples of sizes to create all hidden layers with ReLU
         for i in range(len(nouts) - 1):
             self.layers.append(Layer(sizes[i], sizes[i+1], activation=True))
             
-        # Append the final output layer without ReLU activation
+        # Append the final output layer without ReLU activation 
         self.layers.append(Layer(sizes[-2], sizes[-1], activation=False))
 
-    def forward(self, X):
+    def __call__(self, X):
         for layer in self.layers:
             X = layer(X)
         return X
@@ -70,8 +75,11 @@ class MLP(Module):
         # use list comprehension syntax to flatten all sublists [self.W, self.B] in an unique list without sublist
         return [p for layer in self.layers for p in layer.parameters()]
     
+
+
 def conv_out_size(shape, kernel_size, stride, padding):
     """
+    Helper function that gives the shape of the output of a convolutional layer.
     in_size is (height, width)
     """
 
@@ -84,7 +92,7 @@ def conv_out_size(shape, kernel_size, stride, padding):
 
 class VanillaConv2d(Module):
     """
-    Version 1 of convolution layer inneficient but pedagogical using python loops and operating at scalar operations/tensor scale.
+    Version 1 of convolution layer inneficient but pedagogical using python loops and operating using scalar Tensors.
     """
     def __init__(self, in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1):
         self.in_channels = in_channels
@@ -93,14 +101,14 @@ class VanillaConv2d(Module):
         self.stride = stride
         self.padding = padding
 
-        # assuming relu activation
+        # assuming relu activation, we use He init
         fan_in = kernel_size * kernel_size * in_channels
-        std = np.sqrt(2.0/(fan_in))
+        std = np.sqrt(2.0/(fan_in)) 
         self.W = Tensor(rng.standard_normal((out_channels, in_channels, kernel_size, kernel_size)) * std, dtype=np.float32)
         self.B = Tensor(np.zeros((1, out_channels, 1, 1)), dtype=np.float32)
         
         
-    def forward(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
+    def __call__(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
         # kernel is square matrix
 
         out_size = conv_out_size(X.shape, self.kernel_size, self.stride, self.padding)
@@ -171,7 +179,7 @@ class Conv2d(Module):
 
         
 
-    def forward(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
+    def __call__(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
         # kernel is square matrix
         out_size = conv_out_size(X.shape, self.kernel_size, self.stride, self.padding)
         out_height = out_size[0]
@@ -247,7 +255,7 @@ class Conv2d_v2(Module):
         self.B = Tensor(np.zeros((1, out_channels, 1, 1)), dtype=np.float32) if self.bias else None
         
 
-    def forward(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
+    def __call__(self, X: Tensor): # X has shape (batch, (in) chanels, height, width)
         
         out_size = conv_out_size(X.shape, self.kernel_size, self.stride, self.padding)
         out_height = out_size[0]
@@ -307,7 +315,7 @@ class OptiConv2d(Conv2d_v2):
         self.W = Tensor(rng.standard_normal((self.out_channels, self.fan_in)) * std, dtype=np.float32) # swapped out_channels and fan_in
         self.B = Tensor(np.zeros((1, out_channels, 1, 1)), dtype=np.float32) if self.bias else None
 
-    def forward(self, X: Tensor):
+    def __call__(self, X: Tensor):
         padded_X = X.pad_zeros((0, 0), (0, 0), (self.padding, self.padding), (self.padding, self.padding))
 
         feature_map = padded_X.conv2dfunction(W=self.W, kernel_size=self.kernel_size, stride=self.stride)
@@ -337,7 +345,7 @@ class MaxPool2d(Module):
         self.kernel_size = kernel_size
         self.stride = kernel_size
 
-    def forward(self, X: Tensor): # X has shape (batch, in_channels, height, width)
+    def __call__(self, X: Tensor): # X has shape (batch, in_channels, height, width)
 
         # Optimized path for vgg 2x2 kernel stride =2
         if self.kernel_size == 2 and self.stride == 2 and X.shape[-1] % 2 == 0 and X.shape[-2] % 2 == 0:
@@ -390,7 +398,7 @@ class BatchNorm2d(Module):
     def set_training(self, training = True):
         self.training = training
 
-    def forward(self, X: Tensor): # X.shape is (batch, in_channel, height, width)
+    def __call__(self, X: Tensor): # X.shape is (batch, in_channel, height, width)
         
 
         if self.training:

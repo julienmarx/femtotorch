@@ -4,15 +4,18 @@ from femtotorch.backend import xp # xp is the convention for both numpy and cupy
 class Node:
     """
     Minimal class to save the necessary informations related to one tensor to be able to backprogate.
-    It's the object that stays in RAM until its gradients are passed in the backprobation.
+    It's the object that stays in RAM until its gradients are passed to Tensors in the backprobation.
+
+    In the comments 'consumer' refers to the output of input nodes and an operation during the forward pass.
     """
 
     def __init__(self, function, inputs):
-        self.function = function # the operation that generated the data of of the consumer
+        self.function = function # the operation that generated the data of of the consumer 
         self.inputs = inputs     # the inputs to which the gradient will be backpassed
 
-        # raw arrays or values stashed for backward; never Tensors (to avoid storing unnecessary informations)
-        # these raw arrays/ values never have outgoing references to Node or Tensors,
+        # These are raw arrays or values thare are stashed for backward;
+        # never Tensors (to avoid storing unnecessary informations).
+        # These raw arrays/ values never have outgoing references to Node or Tensors,
         # so there can't be circular reference by design
         self.saved = () 
 
@@ -23,7 +26,7 @@ class Node:
 # helper function to allow backward pass on operations with numpy broadcasting
 def unbroadcast(outGrad, shape):
     """
-    Sum over outGrad axis backdown shape of the broadcasted tensor.
+    Sum over outGrad axes to have the input 'shape' of the broadcasted tensor.
     """
 
     if shape is None: # nothing to unbroadcast
@@ -47,7 +50,7 @@ def broadcast_back(grad, shape, axis, keepdims):
     """
     Expand a reduced gradient back to 'shape'.
     Reduction operations and broadcast are transposes of each other;
-    broadcast_back is unbroadcast, reversed
+    broadcast_back is unbroadcast but reversed
     """
     if axis is not None and not keepdims:
         grad = xp.expand_dims(grad, axis) # reinsert the collapsed slots first
