@@ -37,7 +37,7 @@ class VGG_BN(ft.Module):
         self.out_pool3 = (self.out_conv3 // 4)                
         self.model = ft.MLP(self.out_pool3, [512, 10]) 
 
-    def forward(self, X):
+    def __call__(self, X):
 
         x = self.conv1(X.reshape(-1, 3, 32, 32)) # the -1 allows flexibility on the last batch 
         x = self.batchnorm1(x).relu()
